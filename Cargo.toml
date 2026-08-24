@@ -8,7 +8,7 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/infinityabundance/gemel"
 readme = "README.md"
 keywords = ["version-control", "vcs", "content-addressed", "agentic", "provenance"]
-categories = ["development-tools::version-control"]
+categories = ["development-tools"]
 
 [dependencies]
 blake3 = "1.5"
