@@ -1,8 +1,8 @@
 # Gemel — Specification (Master Document)
 
-Status: **Phase 1 — Minimal Useful Gemel — complete.** Next phase: Phase 2 (Agent-Native
-Value).
-Document version: 1.1.0 (schema version `encver=1`, all object families `schemever=1`).
+Status: **Phase 2 — Agent-Native Value — complete.** Next phase: Phase 3
+(Reconciliation).
+Document version: 1.2.0 (schema version `encver=1`, all object families `schemever=1`).
 Audience: implementers, protocol engineers, agent authors, maintainers.
 
 This document is the normative entry point for the Gemel project. It states what Gemel
@@ -348,6 +348,21 @@ Claim, basic Evidence, basic Residual, Trajectory, resulting State. No distribut
 
 Phase 1 exit verified by the §11.5 conformance matrix and the §17 exit statement.
 
+### Phase 2 — Agent-Native Value (complete)
+
+**Entry:** Phase 1 complete. **Exit:** `why`, `claims`, `evidence`, `residuals`,
+`attempts`, `trajectory`, `checkpoint`, `context` with machine-readable JSON forms; the
+§12 acceptance demo works end-to-end with two agents and no shared conversation.
+
+Supporting mechanics delivered with Phase 2: deterministic cursor pagination,
+budget-bounded context bundles with progressive-disclosure levels, derived evidence
+freshness (`MAY_REQUIRE_REFRESH`), chained trajectory outcomes
+(`trajectory close`), chained residual dispositions (`residual resolve`), checkpoint
+creation from structured repository state, and the rule that a closed trajectory is
+terminal (new work on the same intent spawns a fresh attempt — §7).
+
+Phase 2 exit verified by the §11.6 conformance matrix and the §18 exit statement.
+
 ### Phase 2 — Agent-Native Value
 
 **Entry:** Phase 1 complete. **Exit:** `why`, `claims`, `evidence`, `residuals`,
@@ -456,6 +471,29 @@ the Phase 1 exit criteria and is verified by the integration suite
 | .gitignore subset | `ignore` (`src/ignore.rs`); root `.gitignore` is config, never content |
 | Retention tiers / tombstones | `store::retention`, `store::tombstone` (GC pass is Phase 2+) |
 | JSON output `gemel.query.v1` | `print_json` envelope (`src/bin/gemel.rs`) |
+
+### 11.6 Phase 2 Conformance Matrix
+
+Every §43 requirement of the brief, bound to its implementation. Verified by
+`tests/phase2_tests.rs` (10 integration tests) including the §12 acceptance demo.
+
+| Brief requirement (Phase 2) | Implementation |
+|---|---|
+| `gemel why <subject>` | `query::why` — subject → Change → Intent → Claim → Evidence → Residual (AGENT_PROTOCOL.md §5.2) |
+| `gemel claims` | `query::claims` — subject/status filters, derived statuses, cursor pagination (§5.3) |
+| `gemel evidence <id>\|--subject` | `query::evidence_show`/`evidence_for_subject` with derived freshness (§5.4) |
+| `gemel residuals` | `query::residuals` — latest chain version, disposition/persistence, filters (§5.5) |
+| `gemel attempts <subject>` | `query::attempts` — touching + intent-sharing trajectories, outcomes (§5.6) |
+| `gemel trajectory <id>` | `query::trajectory_detail` — materialized change sequence, handoff (§5.7) |
+| `gemel trajectory close` | `workflow::close_trajectory` — chained outcome version; closed ⇒ terminal |
+| `gemel checkpoint` | `workflow::create_checkpoint` — machine-generated from `query::checkpoint_plan` (§9.2) |
+| `gemel context <subject>` | `query::context_bundle` — phased, budget-bounded, deduplicated, deterministic (§6) |
+| `gemel residual resolve` | `workflow::resolve_residual` — chained disposition event (§8.3) |
+| Machine-readable JSON forms | `gemel.query.v1` envelope on every command; paged envelopes with cursors (§4) |
+| Derived statuses over stored truth | claim status, residual disposition, readiness — always computed (§8) |
+| Progressive disclosure | context bundle levels L1/L2, expansion pointers, `omitted` (§6.1, §6.4) |
+| Negative knowledge surfaced | `attempts`/`why.previous_approaches` preserve rejected/interrupted trajectories (§7) |
+| Two-agent acceptance demo | `acceptance_demo_two_agents` (§12): T17 rejected, T18 interrupted, checkpoint, context, T19 |
 
 ---
 
@@ -577,3 +615,21 @@ Phase 1 exit verified: `cargo test` green (78 unit, 2 golden, 11 integration),
 `cargo clippy --all-targets` zero warnings, golden vectors unchanged, and the CLI
 demonstration `gemel init → snapshot → change begin → change finish → log → show →
 diff → status → fsck` exercised end-to-end by the integration suite.
+
+---
+
+## 18. Phase 2 Exit Statement
+
+Phase 2 is complete when: `why`, `claims`, `evidence`, `residuals`, `attempts`,
+`trajectory`, `checkpoint`, and `context` operate with deterministic machine-readable
+JSON forms; the §12 acceptance demo works end-to-end — Agent A discovers a rejected
+attempt (T17), records a claim with mixed evidence and an open residual, stops at a
+checkpoint; Agent B, receiving only the repository and the intent, retrieves the
+smallest sufficient context (T17 rejected, T18 interrupted, C1 partially supported,
+E1/E2, R1), resolves the residual, and spawns a fresh attempt; and every row of the
+§11.6 matrix is satisfied.
+
+Phase 2 exit verified: `cargo test` green (78 unit, 2 golden, 11 Phase 1, 10 Phase 2
+integration), `cargo clippy --all-targets` zero warnings, `cargo fmt --check` clean,
+golden vectors unchanged, and the acceptance demo exercised both through the library
+API and the CLI JSON surface.

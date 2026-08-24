@@ -1,5 +1,6 @@
-//! Query layer: log, show, status, and derived statuses
-//! (OBJECT_MODEL.md §8, AGENT_PROTOCOL.md §5).
+//! Query layer: log, show, status, derived statuses, and the Phase 2
+//! agent-native surface (why/claims/evidence/residuals/attempts/trajectory/
+//! checkpoint/context; AGENT_PROTOCOL.md §5–§6, §9).
 //!
 //! Derived statuses (claim status, residual disposition, persistence,
 //! readiness) are computed from the canonical graph, never stored.
@@ -8,6 +9,7 @@ use crate::family::Family;
 use crate::gid::Gid;
 use crate::store::{Error, Repo, REF_HEAD, REF_STATE_HEAD, REF_TRAJECTORIES};
 use crate::value::{Field, Object, Value};
+use std::collections::{HashMap, HashSet};
 
 /// One change in `gemel log`.
 #[derive(Debug, Clone)]
@@ -450,4 +452,1508 @@ pub fn resolve_state(repo: &Repo, name_or_id: &str) -> Result<Gid, Error> {
         return Err(Error::Invalid(format!("{name_or_id} is not a state")));
     }
     Ok(gid)
+}
+
+// ---------------------------------------------------------------------------
+// Phase 2 — the agent-native query surface (AGENT_PROTOCOL.md §5–§6, §9)
+// ---------------------------------------------------------------------------
+//
+// Every query returns object references first (progressive disclosure); all
+// ordering is deterministic ((created_at desc, gid asc) unless noted); all
+// derived values are computed from the canonical graph, never stored.
+
+/// The latest version of an append-chained object (trajectory, residual,
+/// checkpoint, config, case): follows `previous` edges via the derived index
+/// (a disposable acceleration; fsck detects drift, rebuild restores).
+pub fn chain_latest(repo: &Repo, gid: &Gid) -> Result<Gid, Error> {
+    let mut current = *gid;
+    if let Ok(conn) = crate::store::index::open_for_query(repo) {
+        let mut guard = 0usize;
+        loop {
+            guard += 1;
+            if guard > 4096 {
+                return Err(Error::Limit {
+                    kind: "chain depth",
+                    limit: 4096,
+                    found: guard as u64,
+                });
+            }
+            let next: Option<String> = conn
+                .query_row(
+                    "SELECT from_id FROM edges WHERE kind = 'previous' AND to_id = ?1 LIMIT 1",
+                    rusqlite::params![current.to_string()],
+                    |row| row.get(0),
+                )
+                .ok();
+            match next {
+                Some(n) => match n.parse::<Gid>() {
+                    Ok(g) => current = g,
+                    Err(_) => break,
+                },
+                None => break,
+            }
+        }
+    }
+    Ok(current)
+}
+
+/// All trajectory versions reachable from `refs/trajectories/*` as
+/// `(name, latest_gid)` sorted by name.
+pub fn all_trajectories(repo: &Repo) -> Result<Vec<(String, Gid)>, Error> {
+    let mut out = Vec::new();
+    let prefix = format!("{REF_TRAJECTORIES}/");
+    for (name, gid) in repo.all_refs()? {
+        if let Some(short) = name.strip_prefix(&prefix) {
+            if short != "current" {
+                out.push((short.to_string(), gid));
+            }
+        }
+    }
+    out.sort();
+    Ok(out)
+}
+
+/// Walks a trajectory chain (newest first) collecting every version object.
+pub fn trajectory_versions(repo: &Repo, latest: &Gid) -> Result<Vec<(Gid, Object)>, Error> {
+    let mut versions = Vec::new();
+    let mut seen = HashSet::new();
+    let mut current = *latest;
+    let mut guard = 0usize;
+    while seen.insert(current) {
+        guard += 1;
+        if guard > 4096 {
+            return Err(Error::Limit {
+                kind: "trajectory chain",
+                limit: 4096,
+                found: guard as u64,
+            });
+        }
+        let obj = repo.load(&current)?;
+        if obj.family != Family::Trajectory {
+            break;
+        }
+        let prev = obj.field_sequence().and_then(|fs| gid_field(fs, 0x01));
+        versions.push((current, obj));
+        match prev {
+            Some(p) => current = p,
+            None => break,
+        }
+    }
+    Ok(versions)
+}
+
+/// Whether a change touches `subject`: an operation with matching
+/// `subject_path` (or a referenced input/output gid), or a claim with a
+/// matching subject. `subject` may be a canonical path, an entity name, or a
+/// textual identity.
+pub fn change_touches(repo: &Repo, change: &Gid, subject: &str) -> Result<bool, Error> {
+    let obj = repo.load(change)?;
+    let fields = obj.field_sequence().unwrap_or(&[]);
+    let subject_gid = subject.parse::<Gid>().ok();
+    for op in gid_list(fields, 0x04) {
+        let op_obj = match repo.load(&op) {
+            Ok(o) => o,
+            Err(_) => continue,
+        };
+        let ofs = op_obj.field_sequence().unwrap_or(&[]);
+        if str_field(ofs, 0x02) == Some(subject) {
+            return Ok(true);
+        }
+        if let Some(sg) = subject_gid {
+            for list in [gid_list(ofs, 0x04), gid_list(ofs, 0x05)] {
+                if list.contains(&sg) {
+                    return Ok(true);
+                }
+            }
+        }
+    }
+    for claim in gid_list(fields, 0x0C) {
+        let claim_obj = match repo.load(&claim) {
+            Ok(o) => o,
+            Err(_) => continue,
+        };
+        let cfs = claim_obj.field_sequence().unwrap_or(&[]);
+        if str_field(cfs, 0x01) == Some(subject) {
+            return Ok(true);
+        }
+        if let Some(sg) = subject_gid {
+            if gid_list(cfs, 0x02).contains(&sg) {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
+}
+
+/// One change that touches a subject, with its context.
+#[derive(Debug, Clone)]
+pub struct SubjectHit {
+    pub change: Gid,
+    pub change_name: Option<String>,
+    pub summary: String,
+    pub created_at: Option<i64>,
+    pub operations: Vec<Gid>,
+    pub claims: Vec<Gid>,
+    pub residuals: Vec<Gid>,
+    pub trajectory: Option<(String, Gid)>,
+}
+
+/// All changes touching `subject`, deterministically ordered
+/// ((created_at desc, gid asc); ties and missing timestamps on gid).
+pub fn changes_touching(repo: &Repo, subject: &str) -> Result<Vec<SubjectHit>, Error> {
+    let mut hits = Vec::new();
+    let mut seen = HashSet::new();
+    let visit = |repo: &Repo,
+                 change: Gid,
+                 traj: Option<(String, Gid)>,
+                 hits: &mut Vec<SubjectHit>,
+                 seen: &mut HashSet<Gid>|
+     -> Result<(), Error> {
+        if !seen.insert(change) {
+            return Ok(());
+        }
+        if !change_touches(repo, &change, subject)? {
+            return Ok(());
+        }
+        let obj = repo.load(&change)?;
+        let fields = obj.field_sequence().unwrap_or(&[]);
+        hits.push(SubjectHit {
+            change,
+            change_name: crate::workflow::name_in_namespace(repo, "refs/names", &change)?,
+            summary: str_field(fields, 0x01).unwrap_or("").to_string(),
+            created_at: int_field(fields, 0x15),
+            operations: gid_list(fields, 0x04),
+            claims: gid_list(fields, 0x0C),
+            residuals: gid_list(fields, 0x0E),
+            trajectory: traj,
+        });
+        Ok(())
+    };
+    // Every trajectory (latest version), walking the chain and its changes.
+    for (name, latest) in all_trajectories(repo)? {
+        let versions = trajectory_versions(repo, &latest)?;
+        let mut chain_changes: Vec<Gid> = Vec::new();
+        for (_, obj) in &versions {
+            let fs = obj.field_sequence().unwrap_or(&[]);
+            chain_changes.extend(gid_list(fs, 0x06));
+        }
+        for change in chain_changes {
+            visit(
+                repo,
+                change,
+                Some((name.clone(), latest)),
+                &mut hits,
+                &mut seen,
+            )?;
+        }
+    }
+    // The head causal chain (defense in depth; deduplicated above).
+    let mut current = repo.read_ref(REF_HEAD)?;
+    while let Some(gid) = current {
+        let obj = match repo.load(&gid) {
+            Ok(o) => o,
+            Err(_) => break,
+        };
+        let fields = obj.field_sequence().unwrap_or(&[]);
+        let parents = gid_list(fields, 0x11);
+        visit(repo, gid, None, &mut hits, &mut seen)?;
+        current = parents.first().copied();
+    }
+    sort_by_time_desc(&mut hits, |h| h.created_at, |h| h.change);
+    Ok(hits)
+}
+
+/// Deterministic (created_at desc, gid asc) sort. Missing timestamps sort
+/// as 0 (oldest), then by gid.
+fn sort_by_time_desc<T>(
+    items: &mut [T],
+    time: impl Fn(&T) -> Option<i64>,
+    gid: impl Fn(&T) -> Gid,
+) {
+    items.sort_by(|a, b| {
+        let (ta, tb) = (time(a).unwrap_or(0), time(b).unwrap_or(0));
+        tb.cmp(&ta)
+            .then_with(|| gid(a).to_string().cmp(&gid(b).to_string()))
+    });
+}
+
+/// Cursor pagination over a deterministically ordered list: `cursor` is the
+/// opaque `<created_at>:<gid>` tuple of the last item of the previous page.
+/// Ordering is (created_at desc, gid asc), so an item at-or-before the cursor
+/// (newer timestamp, or equal timestamp with a lexically smaller-or-equal
+/// gid) is skipped. Returns the page, the next cursor, and whether more
+/// items follow.
+pub fn page_by_time<T>(
+    items: Vec<T>,
+    limit: usize,
+    cursor: Option<&str>,
+    time: impl Fn(&T) -> Option<i64>,
+    gid: impl Fn(&T) -> Gid,
+) -> (Vec<T>, Option<String>) {
+    let after: Option<(i64, String)> = cursor.and_then(|c| {
+        let (t, g) = c.split_once(':')?;
+        Some((t.parse::<i64>().ok()?, g.to_string()))
+    });
+    let at_or_before = |item: &T, after: &(i64, String)| -> bool {
+        let it = time(item).unwrap_or(0);
+        let ig = gid(item).to_string();
+        it > after.0 || (it == after.0 && ig <= after.1)
+    };
+    let mut page: Vec<T> = Vec::new();
+    let mut has_more = false;
+    for item in items {
+        if let Some(a) = &after {
+            if at_or_before(&item, a) {
+                continue;
+            }
+        }
+        if page.len() >= limit {
+            has_more = true;
+            break;
+        }
+        page.push(item);
+    }
+    let next = if has_more {
+        page.last()
+            .map(|last| format!("{}:{}", time(last).unwrap_or(0), gid(last)))
+    } else {
+        None
+    };
+    (page, next)
+}
+
+// ---------------------------------------------------------------------------
+// claims (AGENT_PROTOCOL.md §5.3)
+// ---------------------------------------------------------------------------
+
+/// One claim row in `gemel claims`.
+#[derive(Debug, Clone)]
+pub struct ClaimRow {
+    pub gid: Gid,
+    pub predicate: String,
+    pub predicate_kind: Option<String>,
+    pub subject: Option<String>,
+    pub scope: Option<String>,
+    pub status: ClaimStatus,
+    pub supporting: Vec<Gid>,
+    pub contradicting: Vec<Gid>,
+    pub change: Option<Gid>,
+    pub trajectory: Option<String>,
+    pub created_at: Option<i64>,
+}
+
+/// Filters for `gemel claims`.
+#[derive(Debug, Clone, Default)]
+pub struct ClaimsFilter {
+    pub subject: Option<String>,
+    pub status: Option<ClaimStatus>,
+    pub limit: usize,
+    pub cursor: Option<String>,
+}
+
+/// All claims reachable from trajectory changes, deduplicated, filtered,
+/// paginated.
+pub fn claims(
+    repo: &Repo,
+    filter: &ClaimsFilter,
+) -> Result<(Vec<ClaimRow>, Option<String>), Error> {
+    // Collect every claim referenced by any trajectory change.
+    let mut rows = Vec::new();
+    let mut seen = HashSet::new();
+    let mut decl = HashMap::new();
+    for (traj_name, latest) in all_trajectories(repo)? {
+        for (_, tobj) in trajectory_versions(repo, &latest)? {
+            let tfs = tobj.field_sequence().unwrap_or(&[]);
+            for change in gid_list(tfs, 0x06) {
+                let cobj = match repo.load(&change) {
+                    Ok(o) => o,
+                    Err(_) => continue,
+                };
+                let cfs = cobj.field_sequence().unwrap_or(&[]);
+                for claim in gid_list(cfs, 0x0C) {
+                    if seen.insert(claim) {
+                        decl.insert(claim, (Some(change), Some(traj_name.clone())));
+                    }
+                }
+            }
+        }
+    }
+    for claim in &seen {
+        let obj = match repo.load(claim) {
+            Ok(o) => o,
+            Err(_) => continue,
+        };
+        let fields = obj.field_sequence().unwrap_or(&[]);
+        let subject = str_field(fields, 0x01).map(|s| s.to_string());
+        if let Some(want) = &filter.subject {
+            if subject.as_deref() != Some(want.as_str()) {
+                continue;
+            }
+        }
+        let (status, supporting, contradicting) = claim_status(repo, claim)?;
+        if let Some(want) = filter.status {
+            if status != want {
+                continue;
+            }
+        }
+        let (change, trajectory) = decl.get(claim).cloned().unwrap_or((None, None));
+        rows.push(ClaimRow {
+            gid: *claim,
+            predicate: str_field(fields, 0x03).unwrap_or("").to_string(),
+            predicate_kind: str_field(fields, 0x04).map(|s| s.to_string()),
+            subject,
+            scope: str_field(fields, 0x05).map(|s| s.to_string()),
+            status,
+            supporting,
+            contradicting,
+            change,
+            trajectory,
+            created_at: int_field(fields, 0x0E),
+        });
+    }
+    sort_by_time_desc(&mut rows, |r| r.created_at, |r| r.gid);
+    let limit = if filter.limit == 0 { 100 } else { filter.limit };
+    Ok(page_by_time(
+        rows,
+        limit,
+        filter.cursor.as_deref(),
+        |r| r.created_at,
+        |r| r.gid,
+    ))
+}
+
+// ---------------------------------------------------------------------------
+// evidence (AGENT_PROTOCOL.md §5.4)
+// ---------------------------------------------------------------------------
+
+/// The derived freshness of evidence (§OBJECT_MODEL 8.4, Phase 2 basic):
+/// `CURRENT` when the evaluated state is the head state; otherwise
+/// conservatively `MAY_REQUIRE_REFRESH` (impact analysis is Phase 3+).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Freshness {
+    Current,
+    MayRequireRefresh,
+}
+
+impl Freshness {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Freshness::Current => "CURRENT",
+            Freshness::MayRequireRefresh => "MAY_REQUIRE_REFRESH",
+        }
+    }
+}
+
+/// One evidence row with derived freshness.
+#[derive(Debug, Clone)]
+pub struct EvidenceRow {
+    pub gid: Gid,
+    pub kind: String,
+    pub subject: Option<String>,
+    pub outcome: Option<String>,
+    pub evaluated_state: Option<Gid>,
+    pub freshness: Freshness,
+    pub reproduction_replayable: Option<bool>,
+    pub producer: Option<Gid>,
+    pub created_at: Option<i64>,
+}
+
+/// Derives the freshness of an evidence object.
+pub fn evidence_freshness(repo: &Repo, evidence: &Gid) -> Result<Freshness, Error> {
+    let obj = repo.load(evidence)?;
+    let fields = obj.field_sequence().unwrap_or(&[]);
+    let evaluated = gid_field(fields, 0x11);
+    let head_state = repo.read_ref(REF_STATE_HEAD)?;
+    Ok(match (evaluated, head_state) {
+        (Some(e), Some(h)) if e == h => Freshness::Current,
+        (Some(_), Some(_)) => Freshness::MayRequireRefresh,
+        _ => Freshness::Current,
+    })
+}
+
+/// A single evidence object with derived freshness.
+pub fn evidence_show(repo: &Repo, name_or_id: &str) -> Result<EvidenceRow, Error> {
+    let gid = repo.resolve(name_or_id)?;
+    let obj = repo.load(&gid)?;
+    if obj.family != Family::Evidence {
+        return Err(Error::Invalid(format!("{name_or_id} is not evidence")));
+    }
+    let fields = obj.field_sequence().unwrap_or(&[]);
+    let result = record_field(fields, 0x0D);
+    let reproduction = record_field(fields, 0x0F);
+    Ok(EvidenceRow {
+        gid,
+        kind: str_field(fields, 0x02).unwrap_or("").to_string(),
+        subject: str_field(fields, 0x03).map(|s| s.to_string()),
+        outcome: result
+            .and_then(|r| str_field(r, 0x01))
+            .map(|s| s.to_string()),
+        evaluated_state: gid_field(fields, 0x11),
+        freshness: evidence_freshness(repo, &gid)?,
+        reproduction_replayable: reproduction.and_then(|r| match value_at(r, 0x01) {
+            Some(Value::B(b)) => Some(*b),
+            _ => None,
+        }),
+        producer: gid_field(fields, 0x01),
+        created_at: int_field(fields, 0x10),
+    })
+}
+
+/// Evidence for a subject, deterministically ordered.
+pub fn evidence_for_subject(repo: &Repo, subject: &str) -> Result<Vec<EvidenceRow>, Error> {
+    let mut out = Vec::new();
+    let mut seen = HashSet::new();
+    for (_, latest) in all_trajectories(repo)? {
+        for (_, tobj) in trajectory_versions(repo, &latest)? {
+            let tfs = tobj.field_sequence().unwrap_or(&[]);
+            for change in gid_list(tfs, 0x06) {
+                let cobj = match repo.load(&change) {
+                    Ok(o) => o,
+                    Err(_) => continue,
+                };
+                let cfs = cobj.field_sequence().unwrap_or(&[]);
+                for ev in gid_list(cfs, 0x0D) {
+                    if !seen.insert(ev) {
+                        continue;
+                    }
+                    let eobj = match repo.load(&ev) {
+                        Ok(o) => o,
+                        Err(_) => continue,
+                    };
+                    let efs = eobj.field_sequence().unwrap_or(&[]);
+                    if str_field(efs, 0x03) == Some(subject) {
+                        out.push(evidence_row(repo, &ev)?);
+                    }
+                }
+            }
+        }
+    }
+    sort_by_time_desc(&mut out, |e| e.created_at, |e| e.gid);
+    Ok(out)
+}
+
+fn evidence_row(repo: &Repo, gid: &Gid) -> Result<EvidenceRow, Error> {
+    let obj = repo.load(gid)?;
+    let fields = obj.field_sequence().unwrap_or(&[]);
+    let result = record_field(fields, 0x0D);
+    let reproduction = record_field(fields, 0x0F);
+    Ok(EvidenceRow {
+        gid: *gid,
+        kind: str_field(fields, 0x02).unwrap_or("").to_string(),
+        subject: str_field(fields, 0x03).map(|s| s.to_string()),
+        outcome: result
+            .and_then(|r| str_field(r, 0x01))
+            .map(|s| s.to_string()),
+        evaluated_state: gid_field(fields, 0x11),
+        freshness: evidence_freshness(repo, gid)?,
+        reproduction_replayable: reproduction.and_then(|r| match value_at(r, 0x01) {
+            Some(Value::B(b)) => Some(*b),
+            _ => None,
+        }),
+        producer: gid_field(fields, 0x01),
+        created_at: int_field(fields, 0x10),
+    })
+}
+
+// ---------------------------------------------------------------------------
+// residuals (AGENT_PROTOCOL.md §5.5)
+// ---------------------------------------------------------------------------
+
+/// One residual row (latest chain version) with derived state.
+#[derive(Debug, Clone)]
+pub struct ResidualRow {
+    pub gid: Gid,
+    pub summary: String,
+    pub classification: Option<String>,
+    pub severity: Option<String>,
+    pub disposition: String,
+    pub persistence: usize,
+    pub origin_evidence: Option<Gid>,
+    pub affected_claims: Vec<Gid>,
+    pub affected_changes: Vec<Gid>,
+    pub created_at: Option<i64>,
+}
+
+/// Filters for `gemel residuals`.
+#[derive(Debug, Clone, Default)]
+pub struct ResidualsFilter {
+    pub subject: Option<String>,
+    pub disposition: Option<String>,
+    pub limit: usize,
+    pub cursor: Option<String>,
+}
+
+/// All residuals reachable from trajectory changes (latest chain version
+/// each), filtered, paginated, deterministic order.
+pub fn residuals(
+    repo: &Repo,
+    filter: &ResidualsFilter,
+) -> Result<(Vec<ResidualRow>, Option<String>), Error> {
+    let mut rows = Vec::new();
+    let mut seen = HashSet::new();
+    for (_, latest) in all_trajectories(repo)? {
+        for (_, tobj) in trajectory_versions(repo, &latest)? {
+            let tfs = tobj.field_sequence().unwrap_or(&[]);
+            for change in gid_list(tfs, 0x06) {
+                let cobj = match repo.load(&change) {
+                    Ok(o) => o,
+                    Err(_) => continue,
+                };
+                let cfs = cobj.field_sequence().unwrap_or(&[]);
+                for res in gid_list(cfs, 0x0E) {
+                    let latest = chain_latest(repo, &res)?;
+                    if !seen.insert(latest) {
+                        continue;
+                    }
+                    let row = residual_row(repo, &latest)?;
+                    if let Some(want) = &filter.subject {
+                        let touches = subject_affects_residual(repo, want, &latest)?;
+                        if !touches {
+                            continue;
+                        }
+                    }
+                    if let Some(want) = &filter.disposition {
+                        if &row.disposition != want {
+                            continue;
+                        }
+                    }
+                    rows.push(row);
+                }
+            }
+        }
+    }
+    sort_by_time_desc(&mut rows, |r| r.created_at, |r| r.gid);
+    let limit = if filter.limit == 0 { 100 } else { filter.limit };
+    Ok(page_by_time(
+        rows,
+        limit,
+        filter.cursor.as_deref(),
+        |r| r.created_at,
+        |r| r.gid,
+    ))
+}
+
+fn residual_row(repo: &Repo, gid: &Gid) -> Result<ResidualRow, Error> {
+    let obj = repo.load(gid)?;
+    let fields = obj.field_sequence().unwrap_or(&[]);
+    Ok(ResidualRow {
+        gid: *gid,
+        summary: str_field(fields, 0x02).unwrap_or("").to_string(),
+        classification: str_field(fields, 0x03).map(|s| s.to_string()),
+        severity: str_field(fields, 0x04).map(|s| s.to_string()),
+        disposition: residual_disposition(repo, gid)?,
+        persistence: residual_persistence(repo, gid)?,
+        origin_evidence: gid_field(fields, 0x08),
+        affected_claims: gid_list(fields, 0x06),
+        affected_changes: gid_list(fields, 0x07),
+        created_at: int_field(fields, 0x0C),
+    })
+}
+
+/// Whether a residual (latest version) affects `subject`: an affected claim
+/// about the subject, or an affected change touching the subject.
+pub fn subject_affects_residual(repo: &Repo, subject: &str, residual: &Gid) -> Result<bool, Error> {
+    let obj = repo.load(residual)?;
+    let fields = obj.field_sequence().unwrap_or(&[]);
+    for claim in gid_list(fields, 0x06) {
+        if let Ok(cobj) = repo.load(&claim) {
+            let cfs = cobj.field_sequence().unwrap_or(&[]);
+            if str_field(cfs, 0x01) == Some(subject) {
+                return Ok(true);
+            }
+        }
+    }
+    for change in gid_list(fields, 0x07) {
+        if change_touches(repo, &change, subject)? {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+// ---------------------------------------------------------------------------
+// attempts (AGENT_PROTOCOL.md §5.6)
+// ---------------------------------------------------------------------------
+
+/// One attempt (trajectory) relevant to a subject.
+#[derive(Debug, Clone)]
+pub struct AttemptSummary {
+    pub trajectory: Gid,
+    pub name: Option<String>,
+    pub intent: Option<Gid>,
+    pub outcome: Option<String>,
+    pub termination_reason: Option<String>,
+    pub evidence: Vec<Gid>,
+    pub residuals: Vec<Gid>,
+    pub handoff_summary: Option<String>,
+    pub touched_subject: bool,
+    pub created_at: Option<i64>,
+}
+
+/// Trajectories whose changes touch the subject, plus trajectories sharing
+/// the intent of the touching changes. Touching attempts first; deterministic.
+pub fn attempts(repo: &Repo, subject: &str) -> Result<Vec<AttemptSummary>, Error> {
+    let mut out = Vec::new();
+    let mut shared_intents: HashSet<Gid> = HashSet::new();
+    for hit in changes_touching(repo, subject)? {
+        if let Some(t) = &hit.trajectory {
+            if let Some(intent) = trajectory_intent(repo, &t.1)? {
+                shared_intents.insert(intent);
+            }
+        }
+    }
+    for (name, latest) in all_trajectories(repo)? {
+        let versions = trajectory_versions(repo, &latest)?;
+        let mut touched = false;
+        let mut evidence = Vec::new();
+        let mut residuals = Vec::new();
+        let mut ev_seen = HashSet::new();
+        let mut res_seen = HashSet::new();
+        for (vid, vobj) in &versions {
+            let vfs = vobj.field_sequence().unwrap_or(&[]);
+            for change in gid_list(vfs, 0x06) {
+                if change_touches(repo, &change, subject)? {
+                    touched = true;
+                }
+            }
+            for ev in gid_list(vfs, 0x08) {
+                if ev_seen.insert(ev) {
+                    evidence.push(ev);
+                }
+            }
+            for res in gid_list(vfs, 0x09) {
+                if res_seen.insert(res) {
+                    residuals.push(res);
+                }
+            }
+            let _ = vid;
+        }
+        let latest_obj = &versions[0].1;
+        let lfs = latest_obj.field_sequence().unwrap_or(&[]);
+        let intent = gid_field(lfs, 0x02);
+        let shares_intent = intent.map(|i| shared_intents.contains(&i)).unwrap_or(false);
+        if !touched && !shares_intent {
+            continue;
+        }
+        let handoff = record_field(lfs, 0x0C);
+        out.push(AttemptSummary {
+            trajectory: latest,
+            name: Some(name),
+            intent,
+            outcome: str_field(lfs, 0x0A).map(|s| s.to_string()),
+            termination_reason: str_field(lfs, 0x0B).map(|s| s.to_string()),
+            evidence,
+            residuals,
+            handoff_summary: handoff
+                .and_then(|h| str_field(h, 0x01))
+                .map(|s| s.to_string()),
+            touched_subject: touched,
+            created_at: int_field(lfs, 0x0D),
+        });
+    }
+    // Touching attempts first; then (created_at desc, gid asc).
+    out.sort_by(|a, b| {
+        b.touched_subject
+            .cmp(&a.touched_subject)
+            .then_with(|| {
+                let (ta, tb) = (a.created_at.unwrap_or(0), b.created_at.unwrap_or(0));
+                tb.cmp(&ta)
+            })
+            .then_with(|| a.trajectory.to_string().cmp(&b.trajectory.to_string()))
+    });
+    Ok(out)
+}
+
+fn trajectory_intent(repo: &Repo, latest: &Gid) -> Result<Option<Gid>, Error> {
+    let obj = repo.load(latest)?;
+    Ok(obj.field_sequence().and_then(|fs| gid_field(fs, 0x02)))
+}
+
+// ---------------------------------------------------------------------------
+// trajectory (AGENT_PROTOCOL.md §5.7)
+// ---------------------------------------------------------------------------
+
+/// One change in a trajectory's sequence.
+#[derive(Debug, Clone)]
+pub struct TrajectoryChange {
+    pub change: Gid,
+    pub summary: String,
+    pub state: Option<Gid>,
+    pub created_at: Option<i64>,
+}
+
+/// A trajectory with its full materialized sequence.
+#[derive(Debug, Clone)]
+pub struct TrajectoryDetail {
+    pub gid: Gid,
+    pub name: Option<String>,
+    pub intent: Option<Gid>,
+    pub base_state: Option<Gid>,
+    pub outcome: Option<String>,
+    pub termination_reason: Option<String>,
+    pub sequence: Vec<TrajectoryChange>,
+    pub evidence: Vec<Gid>,
+    pub residuals: Vec<Gid>,
+    pub handoff: Option<HandoffDetail>,
+    pub created_at: Option<i64>,
+}
+
+/// The structured handoff record (OBJECT_MODEL.md §6.9).
+#[derive(Debug, Clone, Default)]
+pub struct HandoffDetail {
+    pub summary: Option<String>,
+    pub completed: Vec<String>,
+    pub remaining: Vec<String>,
+    pub open_residuals: Vec<Gid>,
+    pub important_evidence: Vec<Gid>,
+    pub recommended_objects: Vec<Gid>,
+    pub next_steps: Vec<String>,
+}
+
+/// Materializes a trajectory (by name or identity) with its change sequence
+/// (earliest → latest), accumulated evidence/residuals, and handoff.
+pub fn trajectory_detail(repo: &Repo, name_or_id: &str) -> Result<TrajectoryDetail, Error> {
+    let gid = repo.resolve(name_or_id)?;
+    let obj = repo.load(&gid)?;
+    if obj.family != Family::Trajectory {
+        return Err(Error::Invalid(format!("{name_or_id} is not a trajectory")));
+    }
+    let versions = trajectory_versions(repo, &gid)?;
+    let name = crate::workflow::name_in_namespace(repo, REF_TRAJECTORIES, &gid)?;
+    let latest_fields = versions[0].1.field_sequence().unwrap_or(&[]);
+    let mut sequence: Vec<TrajectoryChange> = Vec::new();
+    let mut evidence = Vec::new();
+    let mut residuals = Vec::new();
+    let mut ev_seen = HashSet::new();
+    let mut res_seen = HashSet::new();
+    let mut ch_seen = HashSet::new();
+    // Chain versions are newest → oldest; the sequence is earliest → latest.
+    for (_, vobj) in versions.iter().rev() {
+        let vfs = vobj.field_sequence().unwrap_or(&[]);
+        for change in gid_list(vfs, 0x06) {
+            if !ch_seen.insert(change) {
+                continue;
+            }
+            let cobj = match repo.load(&change) {
+                Ok(o) => o,
+                Err(_) => continue,
+            };
+            let cfs = cobj.field_sequence().unwrap_or(&[]);
+            sequence.push(TrajectoryChange {
+                change,
+                summary: str_field(cfs, 0x01).unwrap_or("").to_string(),
+                state: gid_field(cfs, 0x05),
+                created_at: int_field(cfs, 0x15),
+            });
+        }
+        for ev in gid_list(vfs, 0x08) {
+            if ev_seen.insert(ev) {
+                evidence.push(ev);
+            }
+        }
+        for res in gid_list(vfs, 0x09) {
+            if res_seen.insert(res) {
+                residuals.push(res);
+            }
+        }
+    }
+    let handoff = record_field(latest_fields, 0x0C).map(|h| HandoffDetail {
+        summary: str_field(h, 0x01).map(|s| s.to_string()),
+        completed: str_list(h, 0x02),
+        remaining: str_list(h, 0x03),
+        open_residuals: gid_list_in(h, 0x04),
+        important_evidence: gid_list_in(h, 0x05),
+        recommended_objects: gid_list_in(h, 0x06),
+        next_steps: str_list(h, 0x07),
+    });
+    Ok(TrajectoryDetail {
+        gid,
+        name,
+        intent: gid_field(latest_fields, 0x02),
+        base_state: gid_field(latest_fields, 0x03),
+        outcome: str_field(latest_fields, 0x0A).map(|s| s.to_string()),
+        termination_reason: str_field(latest_fields, 0x0B).map(|s| s.to_string()),
+        sequence,
+        evidence,
+        residuals,
+        handoff,
+        created_at: int_field(latest_fields, 0x0D),
+    })
+}
+
+/// String list values of a field inside a record.
+fn str_list(fields: &[Field], tag: u8) -> Vec<String> {
+    match value_at(fields, tag) {
+        Some(Value::Array(items)) => items
+            .iter()
+            .filter_map(|v| match v {
+                Value::Str(s) => Some(s.clone()),
+                _ => None,
+            })
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// GID list values of a field inside a record.
+fn gid_list_in(fields: &[Field], tag: u8) -> Vec<Gid> {
+    match value_at(fields, tag) {
+        Some(Value::Array(items)) => items
+            .iter()
+            .filter_map(|v| match v {
+                Value::Gid(g) => Some(*g),
+                _ => None,
+            })
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// why (AGENT_PROTOCOL.md §5.2)
+// ---------------------------------------------------------------------------
+
+/// One evidence detail inside a `why` chain.
+#[derive(Debug, Clone)]
+pub struct WhyEvidence {
+    pub id: Gid,
+    pub kind: String,
+    pub subject: Option<String>,
+    pub outcome: Option<String>,
+}
+
+/// One residual detail inside a `why` chain.
+#[derive(Debug, Clone)]
+pub struct WhyResidual {
+    pub id: Gid,
+    pub summary: String,
+    pub severity: Option<String>,
+    pub disposition: String,
+}
+
+/// The `introduced_by` node of a `why` traversal.
+#[derive(Debug, Clone)]
+pub struct WhyNode {
+    pub change: Gid,
+    pub change_name: Option<String>,
+    pub summary: String,
+    pub created_at: Option<i64>,
+    pub intent: Option<Gid>,
+    pub intent_summary: Option<String>,
+    pub claim: Option<WhyClaim>,
+    pub evidence: Vec<WhyEvidence>,
+    pub residuals: Vec<WhyResidual>,
+}
+
+/// The claim inside a `why` node.
+#[derive(Debug, Clone)]
+pub struct WhyClaim {
+    pub id: Gid,
+    pub predicate: String,
+    pub status: ClaimStatus,
+}
+
+/// The full `why` report.
+#[derive(Debug, Clone)]
+pub struct WhyReport {
+    pub subject: String,
+    pub introduced_by: Option<WhyNode>,
+    pub last_modified: Option<Gid>,
+    pub previous_approaches: Vec<AttemptSummary>,
+    pub uncertainty: Vec<String>,
+}
+
+/// Causal blame (brief §14): subject → Change → Intent → Claim → Evidence →
+/// Residual → (decision). Phase 2: no reconciliation decision nodes yet.
+pub fn why(repo: &Repo, subject: &str) -> Result<WhyReport, Error> {
+    let hits = changes_touching(repo, subject)?;
+    let mut report = WhyReport {
+        subject: subject.to_string(),
+        introduced_by: None,
+        last_modified: None,
+        previous_approaches: Vec::new(),
+        uncertainty: Vec::new(),
+    };
+    if hits.is_empty() {
+        report
+            .uncertainty
+            .push(format!("no change in this repository touches {subject:?}"));
+        return Ok(report);
+    }
+    // introduced_by = the earliest touching change (first appearance);
+    // last_modified = the newest.
+    let mut ordered = hits.clone();
+    ordered.sort_by(|a, b| {
+        let (ta, tb) = (a.created_at.unwrap_or(0), b.created_at.unwrap_or(0));
+        ta.cmp(&tb)
+            .then_with(|| a.change.to_string().cmp(&b.change.to_string()))
+    });
+    let first = &ordered[0];
+    let last = ordered.last().unwrap();
+    report.last_modified = Some(last.change);
+
+    // The claim: from the introducing change's own claims about the subject,
+    // else the latest claim about the subject anywhere.
+    let mut claim: Option<Gid> = None;
+    for c in &first.claims {
+        if claim_subject_is(repo, c, subject)? {
+            claim = Some(*c);
+            break;
+        }
+    }
+    if claim.is_none() {
+        let mut all = claims(
+            repo,
+            &ClaimsFilter {
+                subject: Some(subject.to_string()),
+                ..Default::default()
+            },
+        )?
+        .0;
+        all.sort_by_key(|r| {
+            (
+                std::cmp::Reverse(r.created_at.unwrap_or(0)),
+                r.gid.to_string(),
+            )
+        });
+        claim = all.first().map(|r| r.gid);
+    }
+
+    let mut node = WhyNode {
+        change: first.change,
+        change_name: first.change_name.clone(),
+        summary: first.summary.clone(),
+        created_at: first.created_at,
+        intent: None,
+        intent_summary: None,
+        claim: None,
+        evidence: Vec::new(),
+        residuals: Vec::new(),
+    };
+    let intent = {
+        let cobj = repo.load(&first.change)?;
+        let cfs = cobj.field_sequence().unwrap_or(&[]);
+        gid_field(cfs, 0x02)
+    };
+    node.intent = intent;
+    if let Some(i) = intent {
+        if let Ok(iobj) = repo.load(&i) {
+            let ifs = iobj.field_sequence().unwrap_or(&[]);
+            node.intent_summary = str_field(ifs, 0x01).map(|s| s.to_string());
+        }
+    }
+    if let Some(c) = claim {
+        if let Ok(cobj) = repo.load(&c) {
+            let cfs = cobj.field_sequence().unwrap_or(&[]);
+            let (status, _, _) = claim_status(repo, &c)?;
+            node.claim = Some(WhyClaim {
+                id: c,
+                predicate: str_field(cfs, 0x03).unwrap_or("").to_string(),
+                status,
+            });
+            for ev in gid_list(cfs, 0x08) {
+                if let Ok(eobj) = repo.load(&ev) {
+                    let efs = eobj.field_sequence().unwrap_or(&[]);
+                    let result = record_field(efs, 0x0D);
+                    node.evidence.push(WhyEvidence {
+                        id: ev,
+                        kind: str_field(efs, 0x02).unwrap_or("").to_string(),
+                        subject: str_field(efs, 0x03).map(|s| s.to_string()),
+                        outcome: result
+                            .and_then(|r| str_field(r, 0x01))
+                            .map(|s| s.to_string()),
+                    });
+                }
+            }
+            // Residuals relevant to the claim: those explicitly linked to it
+            // (affected_claims), then the introducing change's own residuals.
+            let mut res_seen = HashSet::new();
+            if let Ok(conn) = crate::store::index::open_for_query(repo) {
+                let stmt = conn
+                    .prepare(
+                        "SELECT from_id FROM edges WHERE kind = 'affected_claims' AND to_id = ?1",
+                    )
+                    .ok();
+                if let Some(mut stmt) = stmt {
+                    if let Ok(rows) = stmt.query_map([c.to_string()], |row| row.get::<_, String>(0))
+                    {
+                        for r in rows.flatten() {
+                            if let Ok(g) = r.parse::<Gid>() {
+                                let _ = res_seen.insert(g);
+                            }
+                        }
+                    }
+                }
+            }
+            for res in first.residuals.iter().copied() {
+                let _ = res_seen.insert(res);
+            }
+            let mut residual_ids: Vec<Gid> = res_seen.into_iter().collect();
+            residual_ids.sort_by_key(|a| a.to_string());
+            for res in residual_ids {
+                let latest = chain_latest(repo, &res)?;
+                if let Ok(robj) = repo.load(&latest) {
+                    let rfs = robj.field_sequence().unwrap_or(&[]);
+                    node.residuals.push(WhyResidual {
+                        id: latest,
+                        summary: str_field(rfs, 0x02).unwrap_or("").to_string(),
+                        severity: str_field(rfs, 0x04).map(|s| s.to_string()),
+                        disposition: residual_disposition(repo, &latest)?,
+                    });
+                }
+            }
+        }
+    }
+    report.introduced_by = Some(node);
+    report.previous_approaches = attempts(repo, subject)?;
+    Ok(report)
+}
+
+fn claim_subject_is(repo: &Repo, claim: &Gid, subject: &str) -> Result<bool, Error> {
+    let obj = repo.load(claim)?;
+    Ok(obj.field_sequence().and_then(|fs| str_field(fs, 0x01)) == Some(subject))
+}
+
+// ---------------------------------------------------------------------------
+// checkpoint plan (AGENT_PROTOCOL.md §9.2)
+// ---------------------------------------------------------------------------
+
+/// The machine-generated checkpoint plan: every field of a checkpoint object
+/// derived from structured repository state (never prose reconstruction).
+#[derive(Debug, Clone)]
+pub struct CheckpointPlan {
+    pub summary: String,
+    pub intent: Option<Gid>,
+    pub trajectory: Option<(String, Gid)>,
+    pub state: Option<Gid>,
+    pub open_claims: Vec<Gid>,
+    pub unresolved_residuals: Vec<Gid>,
+    pub important_evidence: Vec<Gid>,
+    pub recent_decisions: Vec<Gid>,
+    pub relevant_attempts: Vec<Gid>,
+    pub continuation_scope: Vec<String>,
+}
+
+/// Assembles the checkpoint plan from the current repository state.
+pub fn checkpoint_plan(repo: &Repo) -> Result<CheckpointPlan, Error> {
+    let trajectory = repo.read_ref(&format!("{REF_TRAJECTORIES}/current"))?;
+    let mut plan = CheckpointPlan {
+        summary: String::new(),
+        intent: None,
+        trajectory: None,
+        state: repo.read_ref(REF_STATE_HEAD)?,
+        open_claims: Vec::new(),
+        unresolved_residuals: Vec::new(),
+        important_evidence: Vec::new(),
+        recent_decisions: Vec::new(),
+        relevant_attempts: Vec::new(),
+        continuation_scope: Vec::new(),
+    };
+    let mut intent: Option<Gid> = None;
+    if let Some(tg) = trajectory {
+        let name = crate::workflow::name_in_namespace(repo, REF_TRAJECTORIES, &tg)?;
+        plan.trajectory = Some((name.unwrap_or_else(|| tg.to_string()), tg));
+        let detail = trajectory_detail(repo, &tg.to_string())?;
+        intent = detail.intent;
+        plan.important_evidence = detail.evidence.into_iter().take(16).collect();
+        // Open residuals from the trajectory's accumulated set.
+        let mut open = Vec::new();
+        for res in detail.residuals {
+            let latest = chain_latest(repo, &res)?;
+            if residual_disposition(repo, &latest)? == "open" {
+                open.push(latest);
+            }
+        }
+        open.sort_by_key(|a| a.to_string());
+        plan.unresolved_residuals = open.into_iter().take(16).collect();
+        // Relevant attempts: trajectories sharing the intent.
+        if let Some(i) = intent {
+            let mut sharing = Vec::new();
+            for (_, latest) in all_trajectories(repo)? {
+                if latest == tg {
+                    continue;
+                }
+                if trajectory_intent(repo, &latest)? == Some(i) {
+                    sharing.push(latest);
+                }
+            }
+            sharing.sort_by_key(|a| a.to_string());
+            plan.relevant_attempts = sharing.into_iter().take(8).collect();
+        }
+        // Continuation scope: unresolved residual classes + unverified claims.
+        for res in &plan.unresolved_residuals {
+            if let Ok(robj) = repo.load(res) {
+                let rfs = robj.field_sequence().unwrap_or(&[]);
+                let class = str_field(rfs, 0x03).unwrap_or("residual").to_string();
+                let summ = str_field(rfs, 0x02).unwrap_or("").to_string();
+                plan.continuation_scope
+                    .push(format!("resolve {class}: {summ}"));
+            }
+        }
+    }
+    if intent.is_none() {
+        if let Some(head) = repo.read_ref(REF_HEAD)? {
+            if let Ok(hobj) = repo.load(&head) {
+                let hfs = hobj.field_sequence().unwrap_or(&[]);
+                intent = gid_field(hfs, 0x02);
+            }
+        }
+    }
+    plan.intent = intent;
+    if let Some(i) = intent {
+        if let Ok(iobj) = repo.load(&i) {
+            let ifs = iobj.field_sequence().unwrap_or(&[]);
+            let summary = str_field(ifs, 0x01).unwrap_or("").to_string();
+            plan.summary = format!("continue: {summary}");
+        }
+    }
+    if plan.summary.is_empty() {
+        plan.summary = "continue current work".to_string();
+    }
+    // Open claims: head-chain claims not fully supported.
+    let mut open_claims = Vec::new();
+    let mut current = repo.read_ref(REF_HEAD)?;
+    let mut guard = 0usize;
+    while let Some(gid) = current {
+        guard += 1;
+        if guard > 64 {
+            break;
+        }
+        let obj = match repo.load(&gid) {
+            Ok(o) => o,
+            Err(_) => break,
+        };
+        let fields = obj.field_sequence().unwrap_or(&[]);
+        for claim in gid_list(fields, 0x0C) {
+            let (status, _, _) = claim_status(repo, &claim)?;
+            if !matches!(status, ClaimStatus::Supported | ClaimStatus::Superseded) {
+                open_claims.push(claim);
+            }
+        }
+        current = gid_list(fields, 0x11).first().copied();
+    }
+    open_claims.sort_by_key(|a| a.to_string());
+    open_claims.dedup();
+    plan.open_claims = open_claims.into_iter().take(16).collect();
+    for claim in &plan.open_claims {
+        if let Ok(cobj) = repo.load(claim) {
+            let cfs = cobj.field_sequence().unwrap_or(&[]);
+            let predicate = str_field(cfs, 0x03).unwrap_or("").to_string();
+            if !predicate.is_empty() {
+                plan.continuation_scope.push(format!("verify: {predicate}"));
+            }
+        }
+    }
+    // Recent decisions: head causal chain.
+    let mut decisions = Vec::new();
+    let mut current = repo.read_ref(REF_HEAD)?;
+    let mut guard = 0usize;
+    while let Some(gid) = current {
+        guard += 1;
+        if guard > 8 {
+            break;
+        }
+        decisions.push(gid);
+        let obj = match repo.load(&gid) {
+            Ok(o) => o,
+            Err(_) => break,
+        };
+        current = obj
+            .field_sequence()
+            .and_then(|fs| gid_list(fs, 0x11).first().copied());
+    }
+    plan.recent_decisions = decisions;
+    plan.continuation_scope.sort();
+    plan.continuation_scope.dedup();
+    plan.continuation_scope.truncate(16);
+    Ok(plan)
+}
+
+// ---------------------------------------------------------------------------
+// context bundles (AGENT_PROTOCOL.md §6)
+// ---------------------------------------------------------------------------
+
+/// What to include in a context bundle.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct IncludeFlags {
+    pub claims: bool,
+    pub residuals: bool,
+    pub attempts: bool,
+    pub evidence: bool,
+}
+
+impl IncludeFlags {
+    /// Parses a comma-separated `--include` list; empty means all.
+    pub fn parse(spec: &str) -> Result<IncludeFlags, Error> {
+        if spec.trim().is_empty() {
+            return Ok(IncludeFlags {
+                claims: true,
+                residuals: true,
+                attempts: true,
+                evidence: true,
+            });
+        }
+        let mut f = IncludeFlags::default();
+        for part in spec.split(',') {
+            match part.trim() {
+                "claims" => f.claims = true,
+                "residuals" => f.residuals = true,
+                "attempts" => f.attempts = true,
+                "evidence" => f.evidence = true,
+                other => {
+                    return Err(Error::Invalid(format!(
+                        "unknown include category {other:?} (claims|residuals|attempts|evidence)"
+                    )))
+                }
+            }
+        }
+        Ok(f)
+    }
+}
+
+/// One object in a context bundle.
+#[derive(Debug, Clone)]
+pub struct BundleItem {
+    pub id: Gid,
+    pub family: Family,
+    pub level: u8,
+    pub summary: String,
+}
+
+/// The context bundle (AGENT_PROTOCOL.md §6.4).
+#[derive(Debug, Clone)]
+pub struct ContextBundle {
+    pub subject: String,
+    pub intent: Option<Gid>,
+    pub budget_tokens: usize,
+    pub consumed: usize,
+    pub items: Vec<BundleItem>,
+    pub deduplicated: usize,
+    pub expanded: ExpandedCounts,
+    pub next_expand: Vec<String>,
+    pub omitted: Vec<String>,
+}
+
+/// Counts of expanded categories in a bundle.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ExpandedCounts {
+    pub claims: usize,
+    pub residuals: usize,
+    pub attempts: usize,
+    pub evidence: usize,
+}
+
+/// Deterministic token estimate for an item at a level: the textual gid plus
+/// the summary, at roughly 4 bytes per token, plus a fixed envelope.
+fn item_tokens(item: &BundleItem) -> usize {
+    let base = item.id.to_string().len() + item.summary.len() + 16;
+    (base / 4).max(8)
+}
+
+/// Builds the smallest sufficient context bundle for a subject
+/// (AGENT_PROTOCOL.md §6). Phases: changes+claims → residuals (open first) →
+/// attempts → evidence. Deterministic; bounded by `budget_tokens`.
+pub fn context_bundle(
+    repo: &Repo,
+    subject: &str,
+    for_intent: Option<&str>,
+    budget_tokens: usize,
+    include: IncludeFlags,
+) -> Result<ContextBundle, Error> {
+    let mut bundle = ContextBundle {
+        subject: subject.to_string(),
+        intent: for_intent.map(|s| repo.resolve(s)).transpose()?,
+        budget_tokens: budget_tokens.max(64),
+        consumed: 0,
+        items: Vec::new(),
+        deduplicated: 0,
+        expanded: ExpandedCounts::default(),
+        next_expand: Vec::new(),
+        omitted: Vec::new(),
+    };
+    let budget = bundle.budget_tokens;
+    let mut seen: HashSet<Gid> = HashSet::new();
+    let push = |bundle: &mut ContextBundle, item: BundleItem, seen: &mut HashSet<Gid>| -> bool {
+        if !seen.insert(item.id) {
+            bundle.deduplicated += 1;
+            return true;
+        }
+        let cost = item_tokens(&item);
+        if bundle.consumed + cost > budget {
+            bundle
+                .next_expand
+                .push(format!("{}:{}", item.family.short(), item.id));
+            bundle
+                .omitted
+                .push(format!("{}:{}", item.family.short(), item.id));
+            return false;
+        }
+        bundle.consumed += cost;
+        bundle.items.push(item);
+        true
+    };
+
+    // Phase 1: changes touching the subject (L1) + claims (L2).
+    let hits = changes_touching(repo, subject)?;
+    for hit in &hits {
+        let family = Family::Change;
+        if !push(
+            &mut bundle,
+            BundleItem {
+                id: hit.change,
+                family,
+                level: 1,
+                summary: hit.summary.clone(),
+            },
+            &mut seen,
+        ) {
+            return Ok(bundle);
+        }
+    }
+    if include.claims {
+        let all = claims(
+            repo,
+            &ClaimsFilter {
+                subject: Some(subject.to_string()),
+                ..Default::default()
+            },
+        )?
+        .0;
+        for row in &all {
+            if !push(
+                &mut bundle,
+                BundleItem {
+                    id: row.gid,
+                    family: Family::Claim,
+                    level: 2,
+                    summary: row.predicate.clone(),
+                },
+                &mut seen,
+            ) {
+                return Ok(bundle);
+            }
+            bundle.expanded.claims += 1;
+        }
+    }
+
+    // Phase 2: residuals affecting the subject, open first.
+    if include.residuals {
+        let all = residuals(
+            repo,
+            &ResidualsFilter {
+                subject: Some(subject.to_string()),
+                ..Default::default()
+            },
+        )?
+        .0;
+        let mut sorted = all;
+        sorted.sort_by(|a, b| {
+            let oa = (a.disposition == "open") as u8;
+            let ob = (b.disposition == "open") as u8;
+            ob.cmp(&oa)
+                .then_with(|| b.created_at.unwrap_or(0).cmp(&a.created_at.unwrap_or(0)))
+                .then_with(|| a.gid.to_string().cmp(&b.gid.to_string()))
+        });
+        for row in &sorted {
+            if !push(
+                &mut bundle,
+                BundleItem {
+                    id: row.gid,
+                    family: Family::Residual,
+                    level: 2,
+                    summary: format!(
+                        "{} [{}] {}",
+                        row.disposition,
+                        row.severity.as_deref().unwrap_or_default(),
+                        row.summary
+                    ),
+                },
+                &mut seen,
+            ) {
+                return Ok(bundle);
+            }
+            bundle.expanded.residuals += 1;
+        }
+    }
+
+    // Phase 3: previous attempts.
+    if include.attempts {
+        for attempt in attempts(repo, subject)? {
+            let outcome = attempt
+                .outcome
+                .clone()
+                .unwrap_or_else(|| "incomplete".into());
+            if !push(
+                &mut bundle,
+                BundleItem {
+                    id: attempt.trajectory,
+                    family: Family::Trajectory,
+                    level: 1,
+                    summary: format!(
+                        "{}: {}",
+                        outcome,
+                        attempt.termination_reason.clone().unwrap_or_default()
+                    ),
+                },
+                &mut seen,
+            ) {
+                return Ok(bundle);
+            }
+            bundle.expanded.attempts += 1;
+        }
+    }
+
+    // Phase 4: evidence for the included claims.
+    if include.evidence {
+        let mut ev_seen = HashSet::new();
+        let claim_rows = claims(
+            repo,
+            &ClaimsFilter {
+                subject: Some(subject.to_string()),
+                ..Default::default()
+            },
+        )?
+        .0;
+        for row in &claim_rows {
+            if let Ok(cobj) = repo.load(&row.gid) {
+                let cfs = cobj.field_sequence().unwrap_or(&[]);
+                for ev in gid_list(cfs, 0x08) {
+                    if !ev_seen.insert(ev) {
+                        continue;
+                    }
+                    let eobj = match repo.load(&ev) {
+                        Ok(o) => o,
+                        Err(_) => continue,
+                    };
+                    let efs = eobj.field_sequence().unwrap_or(&[]);
+                    let result = record_field(efs, 0x0D);
+                    let outcome = result
+                        .and_then(|r| str_field(r, 0x01))
+                        .unwrap_or("")
+                        .to_string();
+                    if !push(
+                        &mut bundle,
+                        BundleItem {
+                            id: ev,
+                            family: Family::Evidence,
+                            level: 1,
+                            summary: format!("{}: {}", str_field(efs, 0x02).unwrap_or(""), outcome),
+                        },
+                        &mut seen,
+                    ) {
+                        return Ok(bundle);
+                    }
+                    bundle.expanded.evidence += 1;
+                }
+            }
+        }
+    }
+
+    // Phase 5: context manifests of relevant agent runs (Phase 2: none are
+    // created yet; the expansion point is reserved).
+    bundle.next_expand.sort();
+    bundle.next_expand.dedup();
+    bundle.omitted.sort();
+    bundle.omitted.dedup();
+    Ok(bundle)
 }

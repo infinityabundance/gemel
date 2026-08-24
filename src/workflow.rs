@@ -12,7 +12,9 @@ use crate::family::Family;
 use crate::gid::Gid;
 use crate::ignore::Ignore;
 use crate::store::refs::{RefOp, RefTransaction};
-use crate::store::{now_ms, Error, Repo, REF_HEAD, REF_NAMES, REF_STATE_HEAD, REF_TRAJECTORIES};
+use crate::store::{
+    now_ms, Error, Repo, REF_CHECKPOINTS, REF_HEAD, REF_NAMES, REF_STATE_HEAD, REF_TRAJECTORIES,
+};
 use crate::value::{Field, Object, Value};
 use std::path::PathBuf;
 
@@ -104,6 +106,7 @@ fn next_name(repo: &Repo, kind: &str) -> Result<String, Error> {
         "trajectory" => "T",
         "change" => "C",
         "state" => "S",
+        "checkpoint" => "K",
         _ => return Err(Error::Invalid(format!("unknown counter {kind}"))),
     };
     Ok(format!("{prefix}{n}"))
@@ -397,7 +400,9 @@ pub fn finish_change(repo: &Repo, opts: &FinishOptions) -> Result<FinishOutcome,
         }
 
         // Trajectory: continue the most recent trajectory with the same
-        // intent, else create a new one.
+        // intent when it is still open (no outcome); a closed trajectory is
+        // terminal — new work on the same intent starts a fresh attempt
+        // (brief §7: rejected attempts are preserved, not extended).
         let meta = repo.read_meta()?;
         let last_t: u64 = meta["counters"]["trajectory"].as_u64().unwrap_or(0);
         let (trajectory_previous, base_state, is_new) = if last_t > 0 {
@@ -412,8 +417,12 @@ pub fn finish_change(repo: &Repo, opts: &FinishOptions) -> Result<FinishOutcome,
                             Value::Gid(g) => Some(*g),
                             _ => None,
                         });
+                    let closed = obj
+                        .field_sequence()
+                        .and_then(|fs| fs.iter().find(|f| f.tag == 0x0A))
+                        .is_some();
                     let same_intent = traj_intent == intent;
-                    if same_intent {
+                    if same_intent && !closed {
                         let base = obj
                             .field_sequence()
                             .and_then(|fs| fs.iter().find(|f| f.tag == 0x03))
@@ -581,6 +590,302 @@ fn synthesize_creates(
         out.push(repo.insert_object(&Object::fields(Family::Operation, fields))?);
     }
     Ok(out)
+}
+
+// ---------------------------------------------------------------------------
+// Phase 2 — checkpoint, trajectory close, residual resolve
+// ---------------------------------------------------------------------------
+
+/// Options for `gemel checkpoint`.
+#[derive(Debug, Clone, Default)]
+pub struct CheckpointOptions {
+    /// Human summary (default: machine-generated from the intent).
+    pub summary: Option<String>,
+    /// Producer identity (default: repository default producer).
+    pub producer: Option<Gid>,
+}
+
+/// The outcome of `gemel checkpoint`.
+#[derive(Debug, Clone)]
+pub struct CheckpointOutcome {
+    pub checkpoint: Gid,
+    pub name: String,
+    pub plan: crate::query::CheckpointPlan,
+}
+
+/// Creates a checkpoint: a continuation boundary assembled from structured
+/// repository state (AGENT_PROTOCOL.md §9.2). Object family `checkpoint`
+/// (0x14); fields in strict ascending tag order.
+pub fn create_checkpoint(
+    repo: &Repo,
+    opts: &CheckpointOptions,
+) -> Result<CheckpointOutcome, Error> {
+    repo.with_write_lock(|| {
+        let plan = crate::query::checkpoint_plan(repo)?;
+        let producer = match opts.producer {
+            Some(g) => g,
+            None => repo.read_meta()?["default_producer"]
+                .as_str()
+                .ok_or_else(|| Error::Invalid("meta.json has no default_producer".into()))?
+                .parse::<Gid>()
+                .map_err(|e| Error::Invalid(e.to_string()))?,
+        };
+        let summary = opts.summary.clone().unwrap_or(plan.summary.clone());
+        let previous = repo.read_ref(&format!("{REF_CHECKPOINTS}/current"))?;
+        let mut fields = Vec::new();
+        if let Some(prev) = previous {
+            fields.push(f(0x01, Value::Gid(prev)));
+        }
+        fields.push(f(0x02, s(&summary)));
+        if let Some(intent) = plan.intent {
+            fields.push(f(0x03, Value::Gid(intent)));
+        }
+        if let Some((_, traj)) = &plan.trajectory {
+            fields.push(f(0x04, Value::Gid(*traj)));
+        }
+        if let Some(state) = plan.state {
+            fields.push(f(0x05, Value::Gid(state)));
+        }
+        if !plan.open_claims.is_empty() {
+            fields.push(f(
+                0x06,
+                arr(plan.open_claims.iter().copied().map(Value::Gid).collect()),
+            ));
+        }
+        if !plan.unresolved_residuals.is_empty() {
+            fields.push(f(
+                0x07,
+                arr(plan
+                    .unresolved_residuals
+                    .iter()
+                    .copied()
+                    .map(Value::Gid)
+                    .collect()),
+            ));
+        }
+        if !plan.important_evidence.is_empty() {
+            fields.push(f(
+                0x08,
+                arr(plan
+                    .important_evidence
+                    .iter()
+                    .copied()
+                    .map(Value::Gid)
+                    .collect()),
+            ));
+        }
+        if !plan.recent_decisions.is_empty() {
+            fields.push(f(
+                0x09,
+                arr(plan
+                    .recent_decisions
+                    .iter()
+                    .copied()
+                    .map(Value::Gid)
+                    .collect()),
+            ));
+        }
+        if !plan.relevant_attempts.is_empty() {
+            fields.push(f(
+                0x0A,
+                arr(plan
+                    .relevant_attempts
+                    .iter()
+                    .copied()
+                    .map(Value::Gid)
+                    .collect()),
+            ));
+        }
+        if !plan.continuation_scope.is_empty() {
+            fields.push(f(
+                0x0B,
+                arr(plan
+                    .continuation_scope
+                    .iter()
+                    .map(|s| Value::Str(s.clone()))
+                    .collect()),
+            ));
+        }
+        fields.push(f(0x0C, Value::Gid(producer)));
+        fields.push(f(0x0D, Value::I(now_ms())));
+        let checkpoint = repo.insert_object(&Object::fields(Family::Checkpoint, fields))?;
+        let name = next_name(repo, "checkpoint")?;
+        let ops = vec![
+            RefOp::set(&format!("{REF_CHECKPOINTS}/{name}"), checkpoint),
+            RefOp::set(&format!("{REF_CHECKPOINTS}/current"), checkpoint),
+        ];
+        repo.apply_refs_unlocked(&RefTransaction { ops })?;
+        Ok(CheckpointOutcome {
+            checkpoint,
+            name,
+            plan,
+        })
+    })
+}
+
+/// Options for `gemel trajectory close`.
+#[derive(Debug, Clone)]
+pub struct CloseTrajectoryOptions {
+    /// Trajectory name or identity.
+    pub trajectory: String,
+    /// Outcome (`completed` `abandoned` `superseded` `rejected`
+    /// `inconclusive` `interrupted`).
+    pub outcome: String,
+    /// Termination reason.
+    pub reason: Option<String>,
+    /// Producer identity (default: repository default producer).
+    pub producer: Option<Gid>,
+}
+
+/// The outcome of `gemel trajectory close`.
+#[derive(Debug, Clone)]
+pub struct CloseTrajectoryOutcome {
+    pub previous: Gid,
+    pub version: Gid,
+    pub name: String,
+}
+
+/// Publishes a new trajectory version with an outcome and termination reason
+/// (append-chained; the alternative remains canonical). The full change
+/// sequence stays the concatenation of `added_changes` across the chain.
+pub fn close_trajectory(
+    repo: &Repo,
+    opts: &CloseTrajectoryOptions,
+) -> Result<CloseTrajectoryOutcome, Error> {
+    repo.with_write_lock(|| {
+        let previous = repo.resolve(&opts.trajectory)?;
+        let prev_obj = repo.load(&previous)?;
+        if prev_obj.family != Family::Trajectory {
+            return Err(Error::Invalid(format!(
+                "{} is not a trajectory",
+                opts.trajectory
+            )));
+        }
+        let pfs = prev_obj.field_sequence().unwrap_or(&[]);
+        let producer = match opts.producer {
+            Some(g) => g,
+            None => repo.read_meta()?["default_producer"]
+                .as_str()
+                .ok_or_else(|| Error::Invalid("meta.json has no default_producer".into()))?
+                .parse::<Gid>()
+                .map_err(|e| Error::Invalid(e.to_string()))?,
+        };
+        let mut fields = vec![f(0x01, Value::Gid(previous))];
+        if let Some(intent) = crate::query::gid_field(pfs, 0x02) {
+            fields.push(f(0x02, Value::Gid(intent)));
+        }
+        if let Some(base) = crate::query::gid_field(pfs, 0x03) {
+            fields.push(f(0x03, Value::Gid(base)));
+        }
+        fields.push(f(0x04, Value::Gid(producer)));
+        fields.push(f(0x0A, s(&opts.outcome)));
+        if let Some(reason) = &opts.reason {
+            fields.push(f(0x0B, s(reason)));
+        }
+        fields.push(f(0x0D, Value::I(now_ms())));
+        fields.push(f(0x0E, Value::I(now_ms())));
+        let version = repo.insert_object(&Object::fields(Family::Trajectory, fields))?;
+        // Re-point the name at the newest version.
+        let name = crate::workflow::name_in_namespace(repo, REF_TRAJECTORIES, &previous)?
+            .ok_or_else(|| Error::Invalid("trajectory has no name ref".into()))?;
+        let ops = vec![RefOp::set(&format!("{REF_TRAJECTORIES}/{name}"), version)];
+        repo.apply_refs_unlocked(&RefTransaction { ops })?;
+        Ok(CloseTrajectoryOutcome {
+            previous,
+            version,
+            name,
+        })
+    })
+}
+
+/// Options for `gemel residual resolve`.
+#[derive(Debug, Clone)]
+pub struct ResolveResidualOptions {
+    /// Residual name or identity.
+    pub residual: String,
+    /// Disposition: `open` `acknowledged` `resolved` `superseded`
+    /// `irrelevant`.
+    pub disposition: String,
+    /// Rationale.
+    pub reason: Option<String>,
+    /// Producer identity (default: repository default producer).
+    pub producer: Option<Gid>,
+}
+
+/// The outcome of `gemel residual resolve`.
+#[derive(Debug, Clone)]
+pub struct ResolveResidualOutcome {
+    pub previous: Gid,
+    pub version: Gid,
+}
+
+/// Publishes a new residual version with a disposition event. The original
+/// version stays referenced by its change; the derived disposition comes from
+/// the latest chain version (OBJECT_MODEL.md §6.12, §8.3).
+pub fn resolve_residual(
+    repo: &Repo,
+    opts: &ResolveResidualOptions,
+) -> Result<ResolveResidualOutcome, Error> {
+    repo.with_write_lock(|| {
+        let base = repo.resolve(&opts.residual)?;
+        let latest = crate::query::chain_latest(repo, &base)?;
+        let obj = repo.load(&latest)?;
+        if obj.family != Family::Residual {
+            return Err(Error::Invalid(format!(
+                "{} is not a residual",
+                opts.residual
+            )));
+        }
+        let fields = obj.field_sequence().unwrap_or(&[]);
+        let producer = match opts.producer {
+            Some(g) => g,
+            None => repo.read_meta()?["default_producer"]
+                .as_str()
+                .ok_or_else(|| Error::Invalid("meta.json has no default_producer".into()))?
+                .parse::<Gid>()
+                .map_err(|e| Error::Invalid(e.to_string()))?,
+        };
+        // Carry the semantic content forward; append the disposition event.
+        let mut out = vec![f(0x01, Value::Gid(latest))];
+        if let Some(summary) = crate::query::str_field(fields, 0x02) {
+            out.push(f(0x02, s(summary)));
+        }
+        if let Some(class) = crate::query::str_field(fields, 0x03) {
+            out.push(f(0x03, s(class)));
+        }
+        if let Some(sev) = crate::query::str_field(fields, 0x04) {
+            out.push(f(0x04, s(sev)));
+        }
+        let claims = crate::query::gid_list(fields, 0x06);
+        if !claims.is_empty() {
+            out.push(f(
+                0x06,
+                arr(claims.iter().copied().map(Value::Gid).collect()),
+            ));
+        }
+        let changes = crate::query::gid_list(fields, 0x07);
+        if !changes.is_empty() {
+            out.push(f(
+                0x07,
+                arr(changes.iter().copied().map(Value::Gid).collect()),
+            ));
+        }
+        if let Some(origin) = crate::query::gid_field(fields, 0x08) {
+            out.push(f(0x08, Value::Gid(origin)));
+        }
+        let mut event = vec![f(0x01, s(&opts.disposition)), f(0x02, Value::Gid(producer))];
+        if let Some(reason) = &opts.reason {
+            event.push(f(0x05, s(reason)));
+        }
+        event.push(f(0x06, Value::I(now_ms())));
+        out.push(f(0x0A, Value::Record(event)));
+        out.push(f(0x0C, Value::I(now_ms())));
+        let version = repo.insert_object(&Object::fields(Family::Residual, out))?;
+        Ok(ResolveResidualOutcome {
+            previous: latest,
+            version,
+        })
+    })
 }
 
 #[cfg(test)]

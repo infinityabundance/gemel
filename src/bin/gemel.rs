@@ -111,6 +111,115 @@ enum Command {
         #[arg(long)]
         verbose: bool,
     },
+    /// Causal blame: why does this subject exist? (Phase 2)
+    Why {
+        /// Canonical path, entity name, or identity.
+        subject: String,
+        #[arg(long)]
+        json: bool,
+    },
+    /// List claims (filtered, paginated).
+    Claims {
+        /// Only claims about this subject.
+        #[arg(long)]
+        subject: Option<String>,
+        /// Only claims with this derived status.
+        #[arg(long)]
+        status: Option<String>,
+        #[arg(long, default_value_t = 100)]
+        limit: usize,
+        #[arg(long)]
+        cursor: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Show one evidence object, or list evidence for a subject.
+    Evidence {
+        /// Evidence identity (omit with --subject).
+        id: Option<String>,
+        /// List evidence about this subject.
+        #[arg(long)]
+        subject: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// List residuals (filtered, paginated).
+    Residuals {
+        /// Only residuals affecting this subject.
+        #[arg(long)]
+        subject: Option<String>,
+        /// Only residuals with this disposition.
+        #[arg(long)]
+        disposition: Option<String>,
+        #[arg(long, default_value_t = 100)]
+        limit: usize,
+        #[arg(long)]
+        cursor: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Trajectories relevant to a subject (attempts).
+    Attempts {
+        subject: String,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Show or close a trajectory.
+    Trajectory {
+        /// Trajectory name or identity.
+        id: Option<String>,
+        /// Close with this outcome (publishes a chained version).
+        #[arg(long)]
+        close: Option<String>,
+        /// Termination reason (with --close).
+        #[arg(long)]
+        reason: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Manage a residual.
+    #[command(subcommand)]
+    Residual(ResidualCmd),
+    /// Create a continuation checkpoint.
+    Checkpoint {
+        /// Human summary (default: machine-generated).
+        #[arg(long)]
+        summary: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Smallest sufficient context for a subject.
+    Context {
+        /// Canonical path, entity name, or identity.
+        subject: String,
+        /// Intent to pursue (affects relevant attempts).
+        #[arg(long)]
+        for_intent: Option<String>,
+        /// Token budget.
+        #[arg(long, default_value_t = 4096)]
+        budget: usize,
+        /// Comma-separated categories: claims,residuals,attempts,evidence.
+        #[arg(long)]
+        include: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+enum ResidualCmd {
+    /// Publish a residual disposition event (open/acknowledged/resolved/
+    /// superseded/irrelevant) as a chained version.
+    Resolve {
+        /// Residual name or identity.
+        id: String,
+        #[arg(long)]
+        disposition: String,
+        #[arg(long)]
+        reason: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -630,6 +739,427 @@ fn run(cli: &Cli) -> Result<u8, Error> {
             }
             Ok(report.exit_code())
         }
+        Command::Why { subject, json } => {
+            let repo = Repo::find(cli.repo.as_deref().unwrap_or(&std::env::current_dir()?))?;
+            let report = gemel::query::why(&repo, subject)?;
+            if *json {
+                print_json("why", why_json(&report));
+            } else {
+                render_why(&repo, &report)?;
+            }
+            Ok(0)
+        }
+        Command::Claims {
+            subject,
+            status,
+            limit,
+            cursor,
+            json,
+        } => {
+            let repo = Repo::find(cli.repo.as_deref().unwrap_or(&std::env::current_dir()?))?;
+            let want = match status.as_deref() {
+                None => None,
+                Some(s) => Some(parse_claim_status(s)?),
+            };
+            let (rows, next) = gemel::query::claims(
+                &repo,
+                &gemel::query::ClaimsFilter {
+                    subject: subject.clone(),
+                    status: want,
+                    limit: *limit,
+                    cursor: cursor.clone(),
+                },
+            )?;
+            if *json {
+                let claims: Vec<serde_json::Value> = rows
+                    .iter()
+                    .map(|r| {
+                        json!({
+                            "id": r.gid.to_string(),
+                            "predicate": r.predicate,
+                            "predicate_kind": r.predicate_kind,
+                            "subject": r.subject,
+                            "status": r.status.as_str(),
+                            "supporting": r.supporting.iter().map(|g| g.to_string()).collect::<Vec<_>>(),
+                            "contradicting": r.contradicting.iter().map(|g| g.to_string()).collect::<Vec<_>>(),
+                            "scope": r.scope,
+                            "change": r.change.map(|g| g.to_string()),
+                            "trajectory": r.trajectory,
+                        })
+                    })
+                    .collect();
+                print_json_paged(
+                    "claims",
+                    json!({ "claims": claims }),
+                    rows.len(),
+                    next.as_deref(),
+                );
+            } else {
+                for r in &rows {
+                    println!("{}  [{}] {}", r.gid, r.status.as_str(), r.predicate);
+                    if let Some(s) = &r.subject {
+                        println!("    subject: {s}");
+                    }
+                    if !r.supporting.is_empty() {
+                        println!("    supporting: {}", ids(&r.supporting));
+                    }
+                    if !r.contradicting.is_empty() {
+                        println!("    contradicting: {}", ids(&r.contradicting));
+                    }
+                }
+                if let Some(n) = next {
+                    println!("next: --cursor {n}");
+                }
+                if rows.is_empty() {
+                    println!("no claims");
+                }
+            }
+            Ok(0)
+        }
+        Command::Evidence { id, subject, json } => {
+            let repo = Repo::find(cli.repo.as_deref().unwrap_or(&std::env::current_dir()?))?;
+            match (id, subject) {
+                (Some(id), None) => {
+                    let row = gemel::query::evidence_show(&repo, id)?;
+                    if *json {
+                        print_json("evidence", evidence_json(&row));
+                    } else {
+                        render_evidence(&row);
+                    }
+                }
+                (None, Some(subject)) => {
+                    let rows = gemel::query::evidence_for_subject(&repo, subject)?;
+                    if *json {
+                        let list: Vec<serde_json::Value> = rows.iter().map(evidence_json).collect();
+                        print_json("evidence", json!({ "subject": subject, "evidence": list }));
+                    } else {
+                        for r in &rows {
+                            render_evidence(r);
+                        }
+                        if rows.is_empty() {
+                            println!("no evidence for {subject:?}");
+                        }
+                    }
+                }
+                _ => return Err(Error::Invalid("provide either <id> or --subject".into())),
+            }
+            Ok(0)
+        }
+        Command::Residuals {
+            subject,
+            disposition,
+            limit,
+            cursor,
+            json,
+        } => {
+            let repo = Repo::find(cli.repo.as_deref().unwrap_or(&std::env::current_dir()?))?;
+            let (rows, next) = gemel::query::residuals(
+                &repo,
+                &gemel::query::ResidualsFilter {
+                    subject: subject.clone(),
+                    disposition: disposition.clone(),
+                    limit: *limit,
+                    cursor: cursor.clone(),
+                },
+            )?;
+            if *json {
+                let residuals: Vec<serde_json::Value> = rows
+                    .iter()
+                    .map(|r| {
+                        json!({
+                            "id": r.gid.to_string(),
+                            "summary": r.summary,
+                            "classification": r.classification,
+                            "severity": r.severity,
+                            "disposition": r.disposition,
+                            "persistence": { "descendant_changes": r.persistence },
+                            "origin_evidence": r.origin_evidence.map(|g| g.to_string()),
+                            "affected_claims": r.affected_claims.iter().map(|g| g.to_string()).collect::<Vec<_>>(),
+                            "affected_changes": r.affected_changes.iter().map(|g| g.to_string()).collect::<Vec<_>>(),
+                        })
+                    })
+                    .collect();
+                print_json_paged(
+                    "residuals",
+                    json!({ "residuals": residuals }),
+                    rows.len(),
+                    next.as_deref(),
+                );
+            } else {
+                for r in &rows {
+                    println!(
+                        "{} [{}] {}",
+                        r.disposition,
+                        r.severity.as_deref().unwrap_or("medium"),
+                        r.summary
+                    );
+                    if let Some(c) = &r.classification {
+                        println!("    class: {c}");
+                    }
+                    println!("    persistence: {} descendant change(s)", r.persistence);
+                }
+                if let Some(n) = next {
+                    println!("next: --cursor {n}");
+                }
+                if rows.is_empty() {
+                    println!("no residuals");
+                }
+            }
+            Ok(0)
+        }
+        Command::Attempts { subject, json } => {
+            let repo = Repo::find(cli.repo.as_deref().unwrap_or(&std::env::current_dir()?))?;
+            let rows = gemel::query::attempts(&repo, subject)?;
+            if *json {
+                let attempts: Vec<serde_json::Value> = rows
+                    .iter()
+                    .map(|a| {
+                        json!({
+                            "trajectory": a.trajectory.to_string(),
+                            "name": a.name,
+                            "intent": a.intent.map(|g| g.to_string()),
+                            "outcome": a.outcome,
+                            "termination_reason": a.termination_reason,
+                            "evidence": a.evidence.iter().map(|g| g.to_string()).collect::<Vec<_>>(),
+                            "residuals": a.residuals.iter().map(|g| g.to_string()).collect::<Vec<_>>(),
+                            "handoff": a.handoff_summary,
+                            "touched_subject": a.touched_subject,
+                        })
+                    })
+                    .collect();
+                print_json(
+                    "attempts",
+                    json!({ "subject": subject, "attempts": attempts }),
+                );
+            } else {
+                for a in &rows {
+                    let name = a.name.clone().unwrap_or_else(|| a.trajectory.to_string());
+                    println!(
+                        "{}  {}",
+                        name,
+                        a.outcome.clone().unwrap_or_else(|| "incomplete".into())
+                    );
+                    if let Some(r) = &a.termination_reason {
+                        println!("    reason: {r}");
+                    }
+                    if !a.evidence.is_empty() {
+                        println!("    evidence: {}", ids(&a.evidence));
+                    }
+                    if !a.residuals.is_empty() {
+                        println!("    residuals: {}", ids(&a.residuals));
+                    }
+                }
+                if rows.is_empty() {
+                    println!("no previous attempts for {subject:?}");
+                }
+            }
+            Ok(0)
+        }
+        Command::Trajectory {
+            id,
+            close,
+            reason,
+            json,
+        } => {
+            let repo = Repo::find(cli.repo.as_deref().unwrap_or(&std::env::current_dir()?))?;
+            match (id, close) {
+                (Some(id), None) => {
+                    let detail = gemel::query::trajectory_detail(&repo, id)?;
+                    if *json {
+                        print_json("trajectory", trajectory_json(&detail));
+                    } else {
+                        render_trajectory(&repo, &detail)?;
+                    }
+                }
+                (Some(id), Some(outcome)) => {
+                    let out = workflow::close_trajectory(
+                        &repo,
+                        &workflow::CloseTrajectoryOptions {
+                            trajectory: id.clone(),
+                            outcome: outcome.clone(),
+                            reason: reason.clone(),
+                            producer: None,
+                        },
+                    )?;
+                    if *json {
+                        print_json(
+                            "trajectory close",
+                            json!({
+                                "name": out.name,
+                                "previous": out.previous.to_string(),
+                                "version": out.version.to_string(),
+                                "outcome": outcome,
+                            }),
+                        );
+                    } else {
+                        println!("{} closed as {outcome} (version {})", out.name, out.version);
+                        if let Some(r) = reason {
+                            println!("  reason: {r}");
+                        }
+                    }
+                }
+                _ => return Err(Error::Invalid("trajectory requires an id".into())),
+            }
+            Ok(0)
+        }
+        Command::Residual(ResidualCmd::Resolve {
+            id,
+            disposition,
+            reason,
+            json,
+        }) => {
+            let repo = Repo::find(cli.repo.as_deref().unwrap_or(&std::env::current_dir()?))?;
+            let out = workflow::resolve_residual(
+                &repo,
+                &workflow::ResolveResidualOptions {
+                    residual: id.clone(),
+                    disposition: disposition.clone(),
+                    reason: reason.clone(),
+                    producer: None,
+                },
+            )?;
+            if *json {
+                print_json(
+                    "residual resolve",
+                    json!({
+                        "previous": out.previous.to_string(),
+                        "version": out.version.to_string(),
+                        "disposition": disposition,
+                    }),
+                );
+            } else {
+                println!(
+                    "residual {} marked {disposition} (version {})",
+                    out.previous, out.version
+                );
+                if let Some(r) = reason {
+                    println!("  reason: {r}");
+                }
+            }
+            Ok(0)
+        }
+        Command::Checkpoint { summary, json } => {
+            let repo = Repo::find(cli.repo.as_deref().unwrap_or(&std::env::current_dir()?))?;
+            let out = workflow::create_checkpoint(
+                &repo,
+                &workflow::CheckpointOptions {
+                    summary: summary.clone(),
+                    producer: None,
+                },
+            )?;
+            if *json {
+                print_json(
+                    "checkpoint",
+                    json!({
+                        "id": out.checkpoint.to_string(),
+                        "name": out.name,
+                        "summary": out.plan.summary,
+                        "intent": out.plan.intent.map(|g| g.to_string()),
+                        "trajectory": out.plan.trajectory.as_ref().map(|(n, g)| json!({ "name": n, "id": g.to_string() })),
+                        "state": out.plan.state.map(|g| g.to_string()),
+                        "open_claims": out.plan.open_claims.iter().map(|g| g.to_string()).collect::<Vec<_>>(),
+                        "unresolved_residuals": out.plan.unresolved_residuals.iter().map(|g| g.to_string()).collect::<Vec<_>>(),
+                        "important_evidence": out.plan.important_evidence.iter().map(|g| g.to_string()).collect::<Vec<_>>(),
+                        "recent_decisions": out.plan.recent_decisions.iter().map(|g| g.to_string()).collect::<Vec<_>>(),
+                        "relevant_attempts": out.plan.relevant_attempts.iter().map(|g| g.to_string()).collect::<Vec<_>>(),
+                        "continuation_scope": out.plan.continuation_scope,
+                    }),
+                );
+            } else {
+                println!("checkpoint {} ({})", out.name, out.checkpoint);
+                println!("  {}", out.plan.summary);
+                if let Some((name, _)) = &out.plan.trajectory {
+                    println!("  trajectory: {name}");
+                }
+                if let Some(state) = out.plan.state {
+                    println!("  state: {state}");
+                }
+                println!(
+                    "  open claims: {}  open residuals: {}",
+                    out.plan.open_claims.len(),
+                    out.plan.unresolved_residuals.len()
+                );
+                for s in &out.plan.continuation_scope {
+                    println!("  next: {s}");
+                }
+            }
+            Ok(0)
+        }
+        Command::Context {
+            subject,
+            for_intent,
+            budget,
+            include,
+            json,
+        } => {
+            let repo = Repo::find(cli.repo.as_deref().unwrap_or(&std::env::current_dir()?))?;
+            let flags = gemel::query::IncludeFlags::parse(include.as_deref().unwrap_or(""))?;
+            let bundle = gemel::query::context_bundle(
+                &repo,
+                subject,
+                for_intent.as_deref(),
+                *budget,
+                flags,
+            )?;
+            if *json {
+                print_json(
+                    "context",
+                    json!({
+                        "subject": subject,
+                        "intent": bundle.intent.map(|g| g.to_string()),
+                        "budget": {
+                            "tokens": bundle.budget_tokens,
+                            "consumed": bundle.consumed,
+                            "remaining": bundle.budget_tokens.saturating_sub(bundle.consumed),
+                        },
+                        "bundle": {
+                            "objects": bundle.items.iter().map(|i| json!({
+                                "id": i.id.to_string(),
+                                "family": i.family.short(),
+                                "level": i.level,
+                                "summary": i.summary,
+                            })).collect::<Vec<_>>(),
+                            "deduplicated": bundle.deduplicated,
+                            "expanded": {
+                                "claims": bundle.expanded.claims,
+                                "residuals": bundle.expanded.residuals,
+                                "attempts": bundle.expanded.attempts,
+                                "evidence": bundle.expanded.evidence,
+                            },
+                        },
+                        "next": {
+                            "expand": bundle.next_expand,
+                            "why": if bundle.next_expand.is_empty() { "complete".to_string() } else { "budget".to_string() },
+                        },
+                        "omitted": bundle.omitted,
+                    }),
+                );
+            } else {
+                println!(
+                    "context for {subject:?} ({} tokens used of {})",
+                    bundle.consumed, bundle.budget_tokens
+                );
+                for i in &bundle.items {
+                    println!(
+                        "  L{} {} {}  {}",
+                        i.level,
+                        i.family.short(),
+                        i.id,
+                        i.summary
+                    );
+                }
+                if !bundle.next_expand.is_empty() {
+                    println!(
+                        "budget exhausted; expand next: {}",
+                        bundle.next_expand.join(", ")
+                    );
+                }
+                if bundle.items.is_empty() {
+                    println!("nothing relevant found");
+                }
+            }
+            Ok(0)
+        }
     }
 }
 
@@ -964,6 +1494,259 @@ fn print_json(command: &str, result: serde_json::Value) {
         "uncertainty": [],
     });
     println!("{}", serde_json::to_string_pretty(&response).unwrap());
+}
+
+/// Prints a paged `gemel.query.v1` envelope (AGENT_PROTOCOL.md §4.1).
+fn print_json_paged(
+    command: &str,
+    result: serde_json::Value,
+    count: usize,
+    next_cursor: Option<&str>,
+) {
+    let response = json!({
+        "schema": "gemel.query.v1",
+        "request": { "command": command },
+        "pagination": {
+            "has_more": next_cursor.is_some(),
+            "next_cursor": next_cursor,
+            "count": count,
+        },
+        "result": result,
+        "omitted": [],
+        "uncertainty": [],
+    });
+    println!("{}", serde_json::to_string_pretty(&response).unwrap());
+}
+
+/// A comma-separated list of textual gids.
+fn ids(gids: &[gemel::gid::Gid]) -> String {
+    gids.iter()
+        .map(|g| g.to_string())
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// Parses a claim status flag.
+fn parse_claim_status(s: &str) -> Result<gemel::query::ClaimStatus, Error> {
+    use gemel::query::ClaimStatus;
+    match s.to_ascii_uppercase().as_str() {
+        "SUPPORTED" => Ok(ClaimStatus::Supported),
+        "PARTIALLY_SUPPORTED" | "PARTIAL" => Ok(ClaimStatus::PartiallySupported),
+        "CONTRADICTED" => Ok(ClaimStatus::Contradicted),
+        "UNVERIFIED" => Ok(ClaimStatus::Unverified),
+        "STALE" => Ok(ClaimStatus::Stale),
+        "SUPERSEDED" => Ok(ClaimStatus::Superseded),
+        other => Err(Error::Invalid(format!("unknown claim status {other:?}"))),
+    }
+}
+
+/// The `why` report as JSON (AGENT_PROTOCOL.md §5.2).
+fn why_json(report: &gemel::query::WhyReport) -> serde_json::Value {
+    let introduced = report.introduced_by.as_ref().map(|n| {
+        json!({
+            "change": { "id": n.change.to_string(), "name": n.change_name, "summary": n.summary },
+            "intent": n.intent.map(|g| json!({
+                "id": g.to_string(), "summary": n.intent_summary,
+            })),
+            "claim": n.claim.as_ref().map(|c| json!({
+                "id": c.id.to_string(), "predicate": c.predicate, "status": c.status.as_str(),
+            })),
+            "evidence": n.evidence.iter().map(|e| json!({
+                "id": e.id.to_string(), "kind": e.kind, "subject": e.subject, "outcome": e.outcome,
+            })).collect::<Vec<_>>(),
+            "residuals": n.residuals.iter().map(|r| json!({
+                "id": r.id.to_string(), "summary": r.summary,
+                "severity": r.severity, "disposition": r.disposition,
+            })).collect::<Vec<_>>(),
+        })
+    });
+    json!({
+        "subject": report.subject,
+        "introduced_by": introduced,
+        "last_modified": report.last_modified.map(|g| g.to_string()),
+        "previous_approaches": report.previous_approaches.iter().map(attempt_json).collect::<Vec<_>>(),
+    })
+}
+
+fn attempt_json(a: &gemel::query::AttemptSummary) -> serde_json::Value {
+    json!({
+        "trajectory": a.trajectory.to_string(),
+        "name": a.name,
+        "intent": a.intent.map(|g| g.to_string()),
+        "outcome": a.outcome,
+        "termination_reason": a.termination_reason,
+        "evidence": a.evidence.iter().map(|g| g.to_string()).collect::<Vec<_>>(),
+        "residuals": a.residuals.iter().map(|g| g.to_string()).collect::<Vec<_>>(),
+        "handoff": a.handoff_summary,
+        "touched_subject": a.touched_subject,
+    })
+}
+
+/// Human rendering of `why` (brief §14).
+fn render_why(repo: &Repo, report: &gemel::query::WhyReport) -> Result<(), Error> {
+    println!("subject: {}", report.subject);
+    if let Some(n) = &report.introduced_by {
+        println!(
+            "introduced by {} ({})",
+            n.change_name
+                .clone()
+                .unwrap_or_else(|| n.change.to_string()),
+            n.summary
+        );
+        if let Some(i) = &n.intent {
+            let name = repo.name_of(i)?.unwrap_or_else(|| i.to_string());
+            println!(
+                "  intent: {name} {}",
+                n.intent_summary.clone().unwrap_or_default()
+            );
+        }
+        if let Some(c) = &n.claim {
+            println!("  claim: {} [{}]", c.predicate, c.status.as_str());
+            for e in &n.evidence {
+                println!(
+                    "    evidence: {} {} {}",
+                    e.id,
+                    e.kind,
+                    e.outcome.clone().unwrap_or_default()
+                );
+            }
+            for r in &n.residuals {
+                println!(
+                    "    residual: {} [{}] {}",
+                    r.disposition,
+                    r.severity.clone().unwrap_or_default(),
+                    r.summary
+                );
+            }
+        }
+    } else {
+        println!("  (no change in this repository touches this subject)");
+    }
+    if !report.previous_approaches.is_empty() {
+        println!("previous approaches:");
+        for a in &report.previous_approaches {
+            println!(
+                "  {} {}",
+                a.name.clone().unwrap_or_else(|| a.trajectory.to_string()),
+                a.outcome.clone().unwrap_or_else(|| "incomplete".into())
+            );
+            if let Some(r) = &a.termination_reason {
+                println!("    reason: {r}");
+            }
+        }
+    }
+    for u in &report.uncertainty {
+        println!("uncertainty: {u}");
+    }
+    Ok(())
+}
+
+/// An evidence row as JSON (AGENT_PROTOCOL.md §5.4).
+fn evidence_json(row: &gemel::query::EvidenceRow) -> serde_json::Value {
+    json!({
+        "id": row.gid.to_string(),
+        "kind": row.kind,
+        "subject": row.subject,
+        "outcome": row.outcome,
+        "evaluated_state": row.evaluated_state.map(|g| g.to_string()),
+        "freshness": {
+            "status": row.freshness.as_str(),
+            "caused_by": Vec::<String>::new(),
+        },
+        "reproduction": {
+            "replayable": row.reproduction_replayable.unwrap_or(false),
+            "inputs_present": false,
+            "policy_required": false,
+        },
+        "producer": row.producer.map(|g| g.to_string()),
+    })
+}
+
+fn render_evidence(row: &gemel::query::EvidenceRow) {
+    println!("evidence {}", row.gid);
+    println!("  kind: {}", row.kind);
+    if let Some(s) = &row.subject {
+        println!("  subject: {s}");
+    }
+    if let Some(o) = &row.outcome {
+        println!("  outcome: {o}");
+    }
+    println!("  freshness: {}", row.freshness.as_str());
+    if let Some(s) = row.evaluated_state {
+        println!("  evaluated state: {s}");
+    }
+}
+
+/// A trajectory detail as JSON (AGENT_PROTOCOL.md §5.7).
+fn trajectory_json(detail: &gemel::query::TrajectoryDetail) -> serde_json::Value {
+    json!({
+        "id": detail.gid.to_string(),
+        "name": detail.name,
+        "intent": detail.intent.map(|g| g.to_string()),
+        "base_state": detail.base_state.map(|g| g.to_string()),
+        "outcome": detail.outcome,
+        "termination_reason": detail.termination_reason,
+        "sequence": detail.sequence.iter().map(|c| json!({
+            "change": c.change.to_string(),
+            "summary": c.summary,
+            "state": c.state.map(|g| g.to_string()),
+        })).collect::<Vec<_>>(),
+        "evidence": detail.evidence.iter().map(|g| g.to_string()).collect::<Vec<_>>(),
+        "residuals": detail.residuals.iter().map(|g| g.to_string()).collect::<Vec<_>>(),
+        "handoff": detail.handoff.as_ref().map(|h| json!({
+            "summary": h.summary,
+            "completed": h.completed,
+            "remaining": h.remaining,
+            "open_residuals": h.open_residuals.iter().map(|g| g.to_string()).collect::<Vec<_>>(),
+            "important_evidence": h.important_evidence.iter().map(|g| g.to_string()).collect::<Vec<_>>(),
+            "recommended_objects": h.recommended_objects.iter().map(|g| g.to_string()).collect::<Vec<_>>(),
+            "next_steps": h.next_steps,
+        })),
+        "created_at": detail.created_at,
+    })
+}
+
+fn render_trajectory(repo: &Repo, detail: &gemel::query::TrajectoryDetail) -> Result<(), Error> {
+    println!(
+        "trajectory {} ({})",
+        detail
+            .name
+            .clone()
+            .unwrap_or_else(|| detail.gid.to_string()),
+        detail.gid
+    );
+    if let Some(i) = detail.intent {
+        let name = repo.name_of(&i)?.unwrap_or_else(|| i.to_string());
+        println!("  intent: {name}");
+    }
+    if let Some(b) = detail.base_state {
+        println!("  base state: {b}");
+    }
+    println!(
+        "  outcome: {}",
+        detail
+            .outcome
+            .clone()
+            .unwrap_or_else(|| "incomplete".into())
+    );
+    if let Some(r) = &detail.termination_reason {
+        println!("  termination reason: {r}");
+    }
+    for c in &detail.sequence {
+        println!("  {}  {}", c.change, c.summary);
+    }
+    if !detail.evidence.is_empty() {
+        println!("  evidence: {}", ids(&detail.evidence));
+    }
+    if !detail.residuals.is_empty() {
+        println!("  residuals: {}", ids(&detail.residuals));
+    }
+    if let Some(h) = &detail.handoff {
+        if let Some(s) = &h.summary {
+            println!("  handoff: {s}");
+        }
+    }
+    Ok(())
 }
 
 // Helper: parse an exit code from a subcommand result.

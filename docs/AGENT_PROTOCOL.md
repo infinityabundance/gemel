@@ -2,6 +2,12 @@
 
 Status: **Normative.** Version 1.0.0. Query surface schema: `gemel.query.v1`.
 
+Implementation status: §5.1–§5.9 (status, why, claims, evidence, residuals, attempts,
+trajectory, checkpoint, context) are implemented in Phase 2 (`src/query.rs`, the `gemel`
+CLI); §5.10 (reconcile) lands in Phase 3; §5.11–§5.13 (impact, context-diff, release)
+land in Phases 3/5; §7 (evidence ingest) is available through the change workflow in
+Phase 2 and gains the standalone `evidence ingest` endpoint with the FRF integration.
+
 This document defines the machine-readable query surface: response envelope, JSON
 object mapping, pagination, token budgets, every query endpoint with its schema,
 progressive disclosure levels, the evidence-ingestion protocol, context manifest

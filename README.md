@@ -18,7 +18,9 @@ deterministically encoded object model implemented in native Rust.
 
 ## Status
 
-**Phase 1 — Minimal Useful Gemel — complete.** Next: Phase 2 (Agent-Native Value).
+**Phase 2 — Agent-Native Value — complete.** Next: Phase 3 (Reconciliation).
+
+**Phase 1 — Minimal Useful Gemel — complete.**
 
 **Phase 0 — Specification before features — complete.**
 
@@ -45,6 +47,24 @@ deterministically encoded object model implemented in native Rust.
 - The demonstration `State S0 → Intent I1 → Trajectory T1 → Change C1 → State S1` with
   byte-exact content-addressed reconstruction, proven by `tests/phase1_tests.rs`.
 
+**Phase 2 delivers the agent-native query surface** Git fundamentally lacks:
+
+- `gemel why <subject>` — causal blame: subject → Change → Intent → Claim → Evidence →
+  Residual → previous approaches (rejected/interrupted trajectories preserved).
+- `gemel claims` / `evidence` / `residuals` — filtered, paginated, with derived
+  statuses (never stored truth), dispositions, and freshness (`MAY_REQUIRE_REFRESH`).
+- `gemel attempts <subject>` — what was tried, why it ended, its evidence/residuals.
+- `gemel trajectory <id>` — the full materialized change sequence + handoff;
+  `trajectory close` publishes a chained outcome (closed trajectories are terminal;
+  new work on the same intent spawns a fresh attempt).
+- `gemel checkpoint` — a machine-generated continuation boundary (intent, trajectory,
+  state, open claims, unresolved residuals, important evidence, continuation scope).
+- `gemel context <subject> --budget N` — the smallest sufficient context: phased,
+  budget-bounded, deduplicated bundles with progressive-disclosure levels.
+- `gemel residual resolve` — chained disposition events (open/acknowledged/resolved/…).
+- The §52 acceptance demo — two agents, no shared conversation — proven by
+  `tests/phase2_tests.rs`.
+
 ## Reading order
 
 1. `docs/SPECIFICATION.md` — purpose, principles, architecture, conformance matrices.
@@ -64,17 +84,20 @@ src/                    the single `gemel` crate
 ├── encoding layer      spec tables, encode/decode, hashing, validation, JSON projection
 ├── store/              object store, refs+journal, lock, index, tombstone, retention, fsck
 ├── content.rs          working tree ↔ state, tree deltas, operation synthesis, Myers diff
-├── workflow.rs         change begin/finish, intents, trajectories, claims/evidence/residuals
-├── query.rs            log/show/status, derived statuses, readiness
+├── workflow.rs         change begin/finish, intents, trajectories, checkpoint,
+│                       trajectory close, residual resolve
+├── query.rs            log/show/status, why/claims/evidence/residuals/attempts/
+│                       trajectory/context bundles, derived statuses, pagination
 ├── ignore.rs           .gitignore matcher (documented subset of git semantics)
 ├── defaults.rs         default producer/config/retention builders
 ├── golden/             executable golden fixture definitions
 └── bin/
-    ├── gemel.rs        the CLI (init status snapshot change log show diff checkout fsck)
+    ├── gemel.rs        the CLI (init status snapshot change log show diff checkout fsck
+    │                   why claims evidence residuals attempts trajectory checkpoint context)
     └── golden-gen.rs   golden vector generator
 golden/                 pinned golden vectors (canonical bytes + identities)
 docs/                   the normative specification set
-tests/                  Phase 1 integration suite (the acceptance demo)
+tests/                  Phase 1 + Phase 2 integration suites (the acceptance demos)
 ```
 
 Layering is disciplined within the crate: primitives → encoding → schema → fixtures →

@@ -34,6 +34,7 @@ pub const REF_NAMES: &str = "refs/names";
 pub const REF_TRAJECTORIES: &str = "refs/trajectories";
 pub const REF_CASES: &str = "refs/cases";
 pub const REF_RELEASES: &str = "refs/releases";
+pub const REF_CHECKPOINTS: &str = "refs/checkpoints";
 
 /// Errors produced by the repository layer.
 #[derive(Debug)]
@@ -200,7 +201,13 @@ impl Repo {
         let meta_json = serde_json::json!({
             "schema": "gemel.meta.v1",
             "default_producer": producer_id.to_string(),
-            "counters": { "intent": 0, "trajectory": 0, "change": 0, "state": 0 },
+            "counters": {
+                "intent": 0,
+                "trajectory": 0,
+                "change": 0,
+                "state": 0,
+                "checkpoint": 0,
+            },
         });
         repo.write_meta(&meta_json)?;
 
