@@ -137,6 +137,11 @@ derived index; **FSK** = `fsck`; **QRY** = query layer; **WS** = workspace layer
 | DER-03 | Residual persistence counts descendant changes via reverse `causal_parents` closure. | QRY | Test-verified |
 | DER-04 | Readiness is a deterministic function with an explicit reason list. | QRY | Test-verified |
 | DER-05 | Query results are stable under identical (repo, query, params) inputs. | QRY | Test-verified |
+| DER-06 | **The derived index never changes semantic answers** (INVARIANTS core): every semantically meaningful indexed query has a canonical slow path, and the index is consulted only when fresh (not stale, object/ref counts match the canonical store). `query(with index) == query(after deleting the index)` for every derived query. | IDX/QRY | `tests/derived_consistency.rs` — a violation is an implementation bug |
+| DER-07 | Claim→evidence, residual→claim, and residual→evidence links are **explicit producer declarations only**; the system never infers a semantic relationship from insertion order, shared subject strings, or any heuristic (AGENT_PROTOCOL.md §7: ingestion never auto-links). Absent links stay unknown. | QRY/workflow | A violation is an implementation bug |
+| DER-08 | `log` attributes each change to the trajectory whose `added_changes` contain it (canonical reverse derivation) — never to the currently selected trajectory. | QRY | Test-verified |
+| DER-09 | Captured States record their capture coherence (`capture` extension, OBJECT_MODEL.md §6.3); an incoherent capture is recorded as such, never silently claimed coherent. | WS | Test-verified |
+| DER-10 | Exact materialization removes unignored extras but never destroys metadata (`.gemel`), enclosing Git metadata (`.git`), configuration (root `.gitignore`), or ignored (declared non-content) paths; at the repository root, removal of unignored unrecorded work requires an explicit `--force`. | WS/QRY | Test-verified |
 
 ## 8. Retention Invariants
 
@@ -198,9 +203,9 @@ derived index; **FSK** = `fsck`; **QRY** = query layer; **WS** = workspace layer
 | Refs | REF-01…05, ID-05 | journal replay |
 | Index | STO-05, STO-06 | rebuild |
 | fsck | all FSK-marked rows | repair of derived artifacts |
-| Query | DER-01…05, QRY-01…06, SEC-08 | — |
+| Query | DER-01…10, QRY-01…06, SEC-08 | — |
 | GC | RET-01…07 | tombstone restore (remote) |
-| Workspace | SEC-04, STO-08 | recompute dirty |
+| Workspace | SEC-04, STO-08, DER-09, DER-10 | recompute dirty |
 
 Every row of this matrix is a Phase 1+ test target; the negative fixture catalog
 (THREAT_MODEL.md §4) and golden vectors (OBJECT_MODEL.md §12) already exercise the

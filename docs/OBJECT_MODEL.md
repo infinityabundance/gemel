@@ -350,6 +350,7 @@ Tree invariants:
 | Tag | Field | Type | Req | Description / Invariants |
 |---|---|---|---|---|
 | 0x01 | root_tree | GID(tree) | ✓ | Merkle root of the exact repository content |
+| 0x80 | capture | RAW | | Capture coherence attestation (extension; see below) |
 
 Invariants:
 - A State represents pure content; it carries no machine, time, or producer (those
@@ -357,6 +358,20 @@ Invariants:
   original working directory.
 - The root tree (transitively) must exist and be valid (enforced by fsck; STORAGE.md
   §8).
+
+Capture coherence attestation (`0x80`, extension, RAW):
+
+- Present on States captured from a live working tree (`gemel snapshot`, `change
+  finish`); absent on States synthesized by reconciliation or other pure constructions.
+- Value: canonical JSON with sorted keys — `{"coherent": bool, "attempts": uint}`.
+  `coherent` records whether the capture was **observationally coherent**: every
+  entry's (size, mtime) was re-verified after reading, so the bytes correspond to a
+  single observed moment. `attempts` records how many capture attempts were needed
+  (cap: 3). An incoherent capture is recorded honestly, never silently claimed
+  coherent (brief §34: a State must know whether it was observationally coherent;
+  forensic provenance rejects the `A(old)+B(new)` mixture that may never have existed).
+- No timestamp is recorded: identical stable captures deduplicate to the same state
+  identity.
 
 ### 6.4 `operation` — code 0x04, schemever 1, Ext: yes
 

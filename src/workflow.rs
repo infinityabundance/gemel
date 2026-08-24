@@ -279,15 +279,19 @@ pub fn begin_change(repo: &Repo, opts: &BeginOptions) -> Result<BeginOutcome, Er
 // ---------------------------------------------------------------------------
 
 /// A basic claim specification for `change finish`.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ClaimSpec {
     pub subject: Option<String>,
     pub predicate: String,
     pub kind: String,
+    /// Explicit indices into this change's `evidence` list: a deliberate
+    /// declaration by the producer. The system never infers claim→evidence
+    /// links (AGENT_PROTOCOL.md §7: ingestion never auto-links).
+    pub evidence: Vec<usize>,
 }
 
 /// A basic evidence specification for `change finish`.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct EvidenceSpec {
     pub subject: Option<String>,
     pub outcome: String,
@@ -295,11 +299,19 @@ pub struct EvidenceSpec {
 }
 
 /// A basic residual specification for `change finish`.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ResidualSpec {
     pub summary: String,
     pub classification: String,
     pub severity: String,
+    /// Explicit indices into this change's `claims` list (affected claims).
+    /// Empty means the relationship is unknown — never inferred from
+    /// insertion order.
+    pub affected_claims: Vec<usize>,
+    /// Explicit index into this change's `evidence` list (origin evidence).
+    pub origin_evidence: Option<usize>,
+    /// Pre-existing changes affected (gids; usually empty at creation).
+    pub affected_changes: Vec<Gid>,
 }
 
 /// Options for `change finish`.
@@ -412,7 +424,9 @@ pub fn finish_change(repo: &Repo, opts: &FinishOptions) -> Result<FinishOutcome,
         }
         for spec in &opts.claims {
             // Field tags in strict ascending order ([0x01], 0x03, 0x04, 0x07,
-            // [0x08], 0x0E).
+            // [0x08], 0x0E). Evidence links are explicit producer
+            // declarations (indices into this change's evidence list) —
+            // never inferred from shared subjects or insertion order.
             let mut fields = Vec::new();
             if let Some(subject) = &spec.subject {
                 fields.push(f(0x01, s(subject)));
@@ -420,19 +434,18 @@ pub fn finish_change(repo: &Repo, opts: &FinishOptions) -> Result<FinishOutcome,
             fields.push(f(0x03, s(&spec.predicate)));
             fields.push(f(0x04, s(&spec.kind)));
             fields.push(f(0x07, Value::Gid(producer)));
-            // Basic linking: a claim links to evidence with the same
-            // subject produced by this change.
-            if let Some(subject) = &spec.subject {
-                let matched: Vec<Value> = opts
-                    .evidence
-                    .iter()
-                    .zip(evidence_ids.iter())
-                    .filter(|(e, _)| e.subject.as_deref() == Some(subject.as_str()))
-                    .map(|(_, id)| Value::Gid(*id))
-                    .collect();
-                if !matched.is_empty() {
-                    fields.push(f(0x08, arr(matched)));
+            if !spec.evidence.is_empty() {
+                let mut linked = Vec::with_capacity(spec.evidence.len());
+                for &i in &spec.evidence {
+                    let ev = *evidence_ids.get(i).ok_or_else(|| {
+                        Error::Invalid(format!(
+                            "claim evidence index {i} out of range ({} evidence declared)",
+                            evidence_ids.len()
+                        ))
+                    })?;
+                    linked.push(Value::Gid(ev));
                 }
+                fields.push(f(0x08, arr(linked)));
             }
             fields.push(f(0x0E, Value::I(now_ms())));
             claim_ids.push(repo.insert_object(&Object::fields(Family::Claim, fields))?);
@@ -440,16 +453,47 @@ pub fn finish_change(repo: &Repo, opts: &FinishOptions) -> Result<FinishOutcome,
         let mut residual_ids = Vec::new();
         for spec in &opts.residuals {
             // Field tags in strict ascending order (0x02, 0x03, 0x04, [0x06],
-            // [0x08], 0x0C).
+            // [0x07], [0x08], 0x0C). Affected claims / origin evidence are
+            // explicit producer declarations (indices); absent links stay
+            // unknown — a residual is never attached to whatever happened to
+            // be created last.
             let mut fields = vec![
                 f(0x02, s(&spec.summary)),
                 f(0x03, s(&spec.classification)),
                 f(0x04, s(&spec.severity)),
             ];
-            if let (Some(last_evidence), Some(last_claim)) = (evidence_ids.last(), claim_ids.last())
-            {
-                fields.push(f(0x06, arr(vec![Value::Gid(*last_claim)])));
-                fields.push(f(0x08, Value::Gid(*last_evidence)));
+            if !spec.affected_claims.is_empty() {
+                let mut linked = Vec::with_capacity(spec.affected_claims.len());
+                for &i in &spec.affected_claims {
+                    let claim = *claim_ids.get(i).ok_or_else(|| {
+                        Error::Invalid(format!(
+                            "residual affected-claim index {i} out of range ({} claims declared)",
+                            claim_ids.len()
+                        ))
+                    })?;
+                    linked.push(Value::Gid(claim));
+                }
+                fields.push(f(0x06, arr(linked)));
+            }
+            if !spec.affected_changes.is_empty() {
+                fields.push(f(
+                    0x07,
+                    arr(spec
+                        .affected_changes
+                        .iter()
+                        .copied()
+                        .map(Value::Gid)
+                        .collect()),
+                ));
+            }
+            if let Some(i) = spec.origin_evidence {
+                let ev = *evidence_ids.get(i).ok_or_else(|| {
+                    Error::Invalid(format!(
+                        "residual origin-evidence index {i} out of range ({} evidence declared)",
+                        evidence_ids.len()
+                    ))
+                })?;
+                fields.push(f(0x08, Value::Gid(ev)));
             }
             fields.push(f(0x0C, Value::I(now_ms())));
             residual_ids.push(repo.insert_object(&Object::fields(Family::Residual, fields))?);

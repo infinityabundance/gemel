@@ -197,6 +197,67 @@ pub fn is_stale(repo: &Repo) -> Result<bool, Error> {
     Ok(v.as_deref() == Some("1"))
 }
 
+/// Whether the index is safe to consult as an accelerator: not flagged
+/// stale, and with object/ref counts matching the canonical store. The
+/// index must never change semantic answers — it only accelerates them
+/// (INVARIANTS DER-01). A deleted-then-recreated index fails the count
+/// parity check and forces the canonical slow path.
+pub fn is_fresh(repo: &Repo) -> bool {
+    if is_stale(repo).unwrap_or(true) {
+        return false;
+    }
+    let indexed = match open_for_query(repo) {
+        Ok(conn) => {
+            let objects: rusqlite::Result<i64> =
+                conn.query_row("SELECT COUNT(*) FROM objects", [], |row| row.get(0));
+            let refs: rusqlite::Result<i64> =
+                conn.query_row("SELECT COUNT(*) FROM refs", [], |row| row.get(0));
+            (objects.ok(), refs.ok())
+        }
+        Err(_) => return false,
+    };
+    let disk_objects = objects::scan(repo.meta_dir()).map(|v| v.len()).unwrap_or(0) as i64;
+    let disk_refs = refs::all(repo.meta_dir()).map(|v| v.len()).unwrap_or(0) as i64;
+    match indexed {
+        (Some(o), Some(r)) => o == disk_objects && r == disk_refs,
+        _ => false,
+    }
+}
+
+/// A canonical object scan: every object on disk, decoded, in deterministic
+/// order (shard, then file name). Corrupt or unreadable objects are skipped
+/// (fsck reports them; a derived query must not fail on them — it answers
+/// from what it can verify).
+pub fn scan_canonical(repo: &Repo) -> Vec<(Gid, crate::value::Object)> {
+    let limits = repo.limits();
+    let mut out = Vec::new();
+    let mut paths = match objects::scan(repo.meta_dir()) {
+        Ok(p) => p,
+        Err(_) => return out,
+    };
+    paths.sort();
+    for path in paths {
+        let bytes = match std::fs::read(&path) {
+            Ok(b) => b,
+            Err(_) => continue,
+        };
+        let obj = match decode_object(&bytes, &limits) {
+            Ok(o) => o,
+            Err(_) => continue,
+        };
+        let id = match gid_from_envelope(&bytes) {
+            Some(id) => id,
+            None => continue,
+        };
+        if id.digest() != &crate::hash::object_id_bytes(&bytes) {
+            continue;
+        }
+        out.push((id, obj));
+    }
+    out.sort_by_key(|a| a.0.to_string());
+    out
+}
+
 /// The ref mirror from the index.
 pub fn refs_mirror(repo: &Repo) -> Result<Vec<(String, Gid)>, Error> {
     let conn = open_conn(repo)?;

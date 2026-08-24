@@ -91,6 +91,9 @@ fn seed_acceptance_demo(root: &Path) -> Demo {
                 summary: "FreeBSD diverges from the oracle".into(),
                 severity: "high".into(),
                 classification: "platform_divergence".into(),
+                affected_claims: Vec::new(),
+                origin_evidence: None,
+                affected_changes: Vec::new(),
             }],
             ..Default::default()
         },
@@ -129,6 +132,8 @@ fn seed_acceptance_demo(root: &Path) -> Demo {
                 subject: Some("parser.rs".into()),
                 predicate: "parser now matches upstream".into(),
                 kind: "compatibility".into(),
+                // Explicit: both evidence objects bear on this claim.
+                evidence: vec![0, 1],
             }],
             evidence: vec![
                 EvidenceSpec {
@@ -146,6 +151,11 @@ fn seed_acceptance_demo(root: &Path) -> Demo {
                 summary: "FreeBSD diverges from the oracle".into(),
                 severity: "high".into(),
                 classification: "platform_divergence".into(),
+                // Explicit: the divergence affects the compatibility claim
+                // and was first observed by the oracle comparison.
+                affected_claims: vec![0],
+                origin_evidence: Some(1),
+                affected_changes: Vec::new(),
             }],
             ..Default::default()
         },
@@ -428,6 +438,84 @@ fn closed_trajectory_spawns_fresh_attempt() {
 }
 
 #[test]
+fn log_attributes_each_change_to_its_own_trajectory() {
+    let root = temp_root("log-attr");
+    write_file(&root, "a.txt", "one\n");
+    let repo = Repo::init(&root, &InitOptions::default()).unwrap();
+    // T1: two changes on intent I1.
+    workflow::begin_change(
+        &repo,
+        &BeginOptions {
+            intent_summary: Some("I1".into()),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    write_file(&root, "a.txt", "two\n");
+    workflow::finish_change(
+        &repo,
+        &FinishOptions {
+            summary: "c1".into(),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    workflow::begin_change(
+        &repo,
+        &BeginOptions {
+            intent: Some(repo.resolve("I1").unwrap()),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    write_file(&root, "a.txt", "three\n");
+    workflow::finish_change(
+        &repo,
+        &FinishOptions {
+            summary: "c2".into(),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    // T2: one change on a different intent — becomes the *current*
+    // trajectory.
+    workflow::begin_change(
+        &repo,
+        &BeginOptions {
+            intent_summary: Some("I2".into()),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    write_file(&root, "b.txt", "b\n");
+    workflow::finish_change(
+        &repo,
+        &FinishOptions {
+            summary: "c3".into(),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+
+    let entries = query::log(&repo, 10).unwrap();
+    assert_eq!(entries.len(), 3);
+    // Newest first: c3 (T2), c2 (T1), c1 (T1). Each change is attributed to
+    // the trajectory that actually contains it, not the current one.
+    assert_eq!(entries[0].summary, "c3");
+    assert_eq!(entries[0].trajectory.as_deref(), Some("T2"));
+    assert_eq!(entries[1].summary, "c2");
+    assert_eq!(entries[1].trajectory.as_deref(), Some("T1"));
+    assert_eq!(entries[2].summary, "c1");
+    assert_eq!(entries[2].trajectory.as_deref(), Some("T1"));
+    // And the current trajectory is T2 — but that must not bleed into the
+    // historical entries.
+    assert_eq!(
+        query::current_trajectory_name(&repo).unwrap().as_deref(),
+        Some("T2")
+    );
+}
+
+#[test]
 fn claims_filter_and_pagination() {
     let root = temp_root("claims");
     let repo = Repo::init(&root, &InitOptions::default()).unwrap();
@@ -452,6 +540,7 @@ fn claims_filter_and_pagination() {
                     subject: Some(format!("subject-{i}")),
                     predicate: (*predicate).into(),
                     kind: "correctness".into(),
+                    evidence: Vec::new(),
                 }],
                 ..Default::default()
             },
@@ -555,6 +644,9 @@ fn residual_resolution_chains_and_derives_disposition() {
                 summary: "expected output differs from oracle".into(),
                 severity: "medium".into(),
                 classification: "expected_mismatch".into(),
+                affected_claims: Vec::new(),
+                origin_evidence: None,
+                affected_changes: Vec::new(),
             }],
             ..Default::default()
         },

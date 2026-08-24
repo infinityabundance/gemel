@@ -30,6 +30,18 @@ pub struct LogEntry {
 /// Lists changes reachable from `refs/head` following the first causal
 /// parent (newest first).
 pub fn log(repo: &Repo, limit: usize) -> Result<Vec<LogEntry>, Error> {
+    // The trajectory of every change, derived from canonical trajectory
+    // objects (a change belongs to the trajectory whose `added_changes`
+    // contain it — never to whatever trajectory happens to be selected).
+    let mut traj_of: HashMap<Gid, String> = HashMap::new();
+    for (name, latest) in all_trajectories(repo)? {
+        for (_, tobj) in trajectory_versions(repo, &latest)? {
+            let fs = tobj.field_sequence().unwrap_or(&[]);
+            for change in gid_list(fs, 0x06) {
+                traj_of.entry(change).or_insert_with(|| name.clone());
+            }
+        }
+    }
     let mut out = Vec::new();
     let mut current = repo.read_ref(REF_HEAD)?;
     while let Some(gid) = current {
@@ -47,7 +59,7 @@ pub fn log(repo: &Repo, limit: usize) -> Result<Vec<LogEntry>, Error> {
         let evidence = gid_list(fields, 0x0D);
         let residuals = gid_list(fields, 0x0E);
         let name = crate::workflow::name_in_namespace(repo, "refs/names", &gid)?;
-        let trajectory = current_trajectory_name(repo)?;
+        let trajectory = traj_of.get(&gid).cloned();
         let parents = gid_list(fields, 0x11);
         out.push(LogEntry {
             change: gid,
@@ -161,9 +173,11 @@ pub fn claim_status(repo: &Repo, claim: &Gid) -> Result<(ClaimStatus, Vec<Gid>, 
     Ok((status, supporting, contradicting))
 }
 
-/// Whether some claim supersedes `claim` (via the derived index).
+/// Whether some claim supersedes `claim`. Fast path: the derived index
+/// (only when fresh); slow path: a canonical scan of `supersedes` fields.
+/// The index never changes the answer — it only accelerates it.
 fn is_superseded(repo: &Repo, claim: &Gid) -> Result<bool, Error> {
-    if let Ok(conn) = crate::store::index::open_for_query(repo) {
+    let fast = |conn: &rusqlite::Connection| -> Result<bool, Error> {
         let mut stmt = conn
             .prepare("SELECT from_id FROM edges WHERE kind = 'supersedes' AND to_id = ?1 LIMIT 1")
             .map_err(|e| Error::Index(e.to_string()))?;
@@ -174,9 +188,58 @@ fn is_superseded(repo: &Repo, claim: &Gid) -> Result<bool, Error> {
             r.map_err(|e| Error::Index(e.to_string()))?;
             return Ok(true);
         }
-        return Ok(false);
-    }
-    Ok(false)
+        Ok(false)
+    };
+    indexed_or_slow(repo, fast, || {
+        Ok(repo.scan_canonical().into_iter().any(|(_, obj)| {
+            obj.family == Family::Claim
+                && obj.field_sequence().and_then(|fs| gid_field(fs, 0x0B)) == Some(*claim)
+        }))
+    })
+}
+
+/// Residuals explicitly linked to a claim (affected_claims). Fast path: the
+/// derived index (only when fresh); slow path: a canonical scan of residual
+/// `affected_claims` fields.
+pub fn residuals_affecting_claim(repo: &Repo, claim: &Gid) -> Vec<Gid> {
+    let fast = |conn: &rusqlite::Connection| -> Result<Vec<Gid>, Error> {
+        let mut stmt = conn
+            .prepare("SELECT from_id FROM edges WHERE kind = 'affected_claims' AND to_id = ?1")
+            .map_err(|e| Error::Index(e.to_string()))?;
+        let rows = stmt
+            .query_map([claim.to_string()], |row| row.get::<_, String>(0))
+            .map_err(|e| Error::Index(e.to_string()))?;
+        let mut out = Vec::new();
+        for r in rows {
+            let text = r.map_err(|e| Error::Index(e.to_string()))?;
+            if let Ok(g) = text.parse::<Gid>() {
+                out.push(g);
+            }
+        }
+        out.sort_by_key(|a| a.to_string());
+        Ok(out)
+    };
+    let slow = || {
+        let mut out: Vec<Gid> = repo
+            .scan_canonical()
+            .into_iter()
+            .filter_map(|(id, obj)| {
+                if obj.family == Family::Residual
+                    && obj
+                        .field_sequence()
+                        .map(|fs| gid_list(fs, 0x06).contains(claim))
+                        .unwrap_or(false)
+                {
+                    Some(id)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        out.sort_by_key(|a| a.to_string());
+        Ok(out)
+    };
+    indexed_or_slow(repo, fast, slow).unwrap_or_default()
 }
 
 /// The outcome string of an evidence object's result, if present.
@@ -462,12 +525,32 @@ pub fn resolve_state(repo: &Repo, name_or_id: &str) -> Result<Gid, Error> {
 // ordering is deterministic ((created_at desc, gid asc) unless noted); all
 // derived values are computed from the canonical graph, never stored.
 
+/// Consults the derived index only when it is fresh; otherwise falls back to
+/// the canonical slow path. The index is an accelerator, never an oracle
+/// (INVARIANTS DER-01): both paths must produce identical answers — with the
+/// index, quickly; without it, slowly. Never differently.
+fn indexed_or_slow<T>(
+    repo: &Repo,
+    fast: impl FnOnce(&rusqlite::Connection) -> Result<T, Error>,
+    slow: impl FnOnce() -> Result<T, Error>,
+) -> Result<T, Error> {
+    if repo.index_is_fresh() {
+        if let Ok(conn) = crate::store::index::open_for_query(repo) {
+            if let Ok(v) = fast(&conn) {
+                return Ok(v);
+            }
+        }
+    }
+    slow()
+}
+
 /// The latest version of an append-chained object (trajectory, residual,
-/// checkpoint, config, case): follows `previous` edges via the derived index
-/// (a disposable acceleration; fsck detects drift, rebuild restores).
+/// checkpoint, config, case): follows `previous` edges. Fast path: the
+/// derived index (only when fresh). Slow path: a canonical scan of `previous`
+/// fields — identical answers, always.
 pub fn chain_latest(repo: &Repo, gid: &Gid) -> Result<Gid, Error> {
-    let mut current = *gid;
-    if let Ok(conn) = crate::store::index::open_for_query(repo) {
+    let fast = |conn: &rusqlite::Connection| -> Result<Gid, Error> {
+        let mut current = *gid;
         let mut guard = 0usize;
         loop {
             guard += 1;
@@ -493,6 +576,32 @@ pub fn chain_latest(repo: &Repo, gid: &Gid) -> Result<Gid, Error> {
                 None => break,
             }
         }
+        Ok(current)
+    };
+    indexed_or_slow(repo, fast, || chain_latest_slow(repo, gid))
+}
+
+/// Canonical slow path for [`chain_latest`]: one scan of every object,
+/// building the `previous → gid` map.
+fn chain_latest_slow(repo: &Repo, gid: &Gid) -> Result<Gid, Error> {
+    let mut next_of: HashMap<Gid, Gid> = HashMap::new();
+    for (id, obj) in repo.scan_canonical() {
+        if let Some(prev) = obj.field_sequence().and_then(|fs| gid_field(fs, 0x01)) {
+            next_of.insert(prev, id);
+        }
+    }
+    let mut current = *gid;
+    let mut guard = 0usize;
+    while let Some(next) = next_of.get(&current) {
+        guard += 1;
+        if guard > 4096 {
+            return Err(Error::Limit {
+                kind: "chain depth",
+                limit: 4096,
+                found: guard as u64,
+            });
+        }
+        current = *next;
     }
     Ok(current)
 }
@@ -1467,24 +1576,8 @@ pub fn why(repo: &Repo, subject: &str) -> Result<WhyReport, Error> {
             }
             // Residuals relevant to the claim: those explicitly linked to it
             // (affected_claims), then the introducing change's own residuals.
-            let mut res_seen = HashSet::new();
-            if let Ok(conn) = crate::store::index::open_for_query(repo) {
-                let stmt = conn
-                    .prepare(
-                        "SELECT from_id FROM edges WHERE kind = 'affected_claims' AND to_id = ?1",
-                    )
-                    .ok();
-                if let Some(mut stmt) = stmt {
-                    if let Ok(rows) = stmt.query_map([c.to_string()], |row| row.get::<_, String>(0))
-                    {
-                        for r in rows.flatten() {
-                            if let Ok(g) = r.parse::<Gid>() {
-                                let _ = res_seen.insert(g);
-                            }
-                        }
-                    }
-                }
-            }
+            let mut res_seen: HashSet<Gid> =
+                residuals_affecting_claim(repo, &c).into_iter().collect();
             for res in first.residuals.iter().copied() {
                 let _ = res_seen.insert(res);
             }

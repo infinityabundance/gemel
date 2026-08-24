@@ -20,6 +20,102 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 static COUNTER: AtomicU64 = AtomicU64::new(0);
 
+#[test]
+fn exact_checkout_removes_extras_and_protects_unrecorded_work() {
+    let root = temp_root("exact");
+    write_file(&root, "a.rs", "pub fn a() {}\n");
+    let repo = Repo::init(&root, &InitOptions::default()).unwrap();
+    workflow::begin_change(&repo, &BeginOptions::default()).unwrap();
+    write_file(&root, "b.rs", "pub fn b() {}\n");
+    let _ = workflow::finish_change(
+        &repo,
+        &FinishOptions {
+            summary: "both".into(),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    // State S1 = {a.rs, b.rs}. Now add unrecorded work.
+    write_file(&root, "garbage.rs", "// unrecorded\n");
+    write_file(&root, "build/out.o", "binary");
+    write_file(&root, "notes.txt", "unignored extra\n");
+    std::fs::write(root.join(".gitignore"), "build/\n").unwrap();
+    write_file(&root, ".git/config", "[core]\n");
+
+    // Exact checkout: removes unignored extras; protects ignored paths,
+    // configuration, and metadata.
+    let ignore = Ignore::from_root(&root);
+    let s1 = repo.resolve("S1").unwrap();
+    let mut removed = content::materialize_exact(&repo, &s1, &root, &ignore).unwrap();
+    removed.sort();
+    assert_eq!(
+        removed,
+        vec!["garbage.rs", "notes.txt"],
+        "unignored extras are removed by exact checkout"
+    );
+    assert!(root.join("a.rs").exists());
+    assert!(root.join("b.rs").exists());
+    assert!(
+        root.join("build/out.o").exists(),
+        "ignored artifact kept (declared non-content)"
+    );
+    assert!(root.join(".gitignore").exists(), "config kept");
+    assert!(root.join(".git/config").exists(), "git metadata kept");
+    assert!(root.join(".gemel").is_dir(), "repository metadata kept");
+
+    // Overlay leaves everything untouched.
+    write_file(&root, "notes2.txt", "extra\n");
+    content::materialize_overlay(&repo, &s1, &root).unwrap();
+    assert!(root.join("notes2.txt").exists(), "overlay keeps extras");
+}
+
+#[test]
+fn cli_checkout_protects_unrecorded_work_without_force() {
+    let root = temp_root("exact-cli");
+    write_file(&root, "a.rs", "pub fn a() {}\n");
+    let repo = Repo::init(&root, &InitOptions::default()).unwrap();
+    workflow::begin_change(&repo, &BeginOptions::default()).unwrap();
+    write_file(&root, "b.rs", "pub fn b() {}\n");
+    workflow::finish_change(
+        &repo,
+        &FinishOptions {
+            summary: "both".into(),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    write_file(&root, "precious.rs", "// unrecorded work\n");
+
+    let bin = env!("CARGO_BIN_EXE_gemel");
+    let run = |args: &[&str]| -> (i32, String, String) {
+        let mut cmd = std::process::Command::new(bin);
+        cmd.arg("--repo").arg(&root);
+        cmd.args(args);
+        let out = cmd.output().expect("run gemel");
+        (
+            out.status.code().unwrap_or(-1),
+            String::from_utf8_lossy(&out.stdout).into_owned(),
+            String::from_utf8_lossy(&out.stderr).into_owned(),
+        )
+    };
+    // Exact checkout at the repository root refuses to destroy unrecorded
+    // work without --force.
+    let (code, _, err) = run(&["checkout", "S1"]);
+    assert_eq!(code, 2, "must refuse: {err}");
+    assert!(err.contains("precious.rs"), "names the file: {err}");
+    assert!(root.join("precious.rs").exists(), "nothing deleted");
+    // --force proceeds and removes it.
+    let (code, out, err) = run(&["checkout", "S1", "--force"]);
+    assert_eq!(code, 0, "force checkout failed: {err}");
+    assert!(out.contains("precious.rs"));
+    assert!(!root.join("precious.rs").exists(), "force removes it");
+    // A fresh directory needs no gate.
+    let target = temp_root("exact-cli-target");
+    let (code, _, err) = run(&["checkout", "S1", "--dir", target.to_str().unwrap()]);
+    assert_eq!(code, 0, "fresh dir checkout failed: {err}");
+    assert!(target.join("a.rs").exists());
+}
+
 fn temp_root(tag: &str) -> PathBuf {
     let n = COUNTER.fetch_add(1, Ordering::SeqCst);
     let dir = std::env::temp_dir().join(format!("gemel-p1-{tag}-{}-{n}", std::process::id()));
@@ -191,8 +287,8 @@ fn demo_s0_to_s1_exact_reconstruction() {
     // EXACT CONTENT-ADDRESSED RECONSTRUCTION.
     let dir_s0 = temp_root("recon-s0");
     let dir_s1 = temp_root("recon-s1");
-    content::materialize(&repo, &s0, &dir_s0).unwrap();
-    content::materialize(&repo, &s1, &dir_s1).unwrap();
+    content::materialize_overlay(&repo, &s0, &dir_s0).unwrap();
+    content::materialize_overlay(&repo, &s1, &dir_s1).unwrap();
     assert_eq!(
         read_dir_tree(&dir_s0),
         tree_before,
@@ -343,11 +439,15 @@ fn claims_evidence_residuals_flow() {
                     subject: Some("parser::decode".into()),
                     predicate: "parser accepts all valid inputs".into(),
                     kind: "correctness".into(),
+                    // Explicit declaration: both evidence objects are
+                    // relevant to this claim (never inferred).
+                    evidence: vec![0, 1],
                 },
                 ClaimSpec {
                     subject: Some("parser::decode".into()),
                     predicate: "parser matches upstream on all inputs".into(),
                     kind: "compatibility".into(),
+                    evidence: vec![0, 1],
                 },
             ],
             evidence: vec![
@@ -366,6 +466,11 @@ fn claims_evidence_residuals_flow() {
                 summary: "FreeBSD diverges from the oracle".into(),
                 severity: "high".into(),
                 classification: "platform_divergence".into(),
+                // Explicit declarations: the divergence affects both claims
+                // and was first observed by the oracle comparison.
+                affected_claims: vec![0, 1],
+                origin_evidence: Some(1),
+                affected_changes: Vec::new(),
             }],
             ..Default::default()
         },
@@ -375,8 +480,9 @@ fn claims_evidence_residuals_flow() {
     assert_eq!(finished.evidence.len(), 2);
     assert_eq!(finished.residuals.len(), 1);
 
-    // Derived claim statuses: pass evidence + fail evidence on the same
-    // subject → PARTIALLY_SUPPORTED for both (basic subject-matched linking).
+    // Derived claim statuses: pass + mismatch evidence explicitly linked to
+    // both claims → PARTIALLY_SUPPORTED (explicit declarations, not
+    // subject-matched inference).
     let (status, supporting, contradicting) =
         query::claim_status(&repo, &finished.claims[0]).unwrap();
     assert_eq!(status, query::ClaimStatus::PartiallySupported);

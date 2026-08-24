@@ -91,7 +91,9 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
-    /// Materialize a state into a directory.
+    /// Materialize a state into a directory (exact by default: files not in
+    /// the state are removed, protecting .gemel/.git/.gitignore and ignored
+    /// paths; --overlay leaves extra files untouched).
     Checkout {
         state: String,
         /// Target directory (default: repository root).
@@ -101,6 +103,13 @@ enum Command {
         /// (default: `default`).
         #[arg(long)]
         workspace: Option<String>,
+        /// Overlay semantics: overwrite, leave extra files untouched.
+        #[arg(long)]
+        overlay: bool,
+        /// Allow removing unignored unrecorded files at the repository root
+        /// (exact checkout refuses without this).
+        #[arg(long)]
+        force: bool,
         #[arg(long)]
         json: bool,
     },
@@ -538,6 +547,10 @@ fn run(cli: &Cli) -> Result<u8, Error> {
                         subject: p.first().filter(|s| !s.is_empty()).cloned(),
                         predicate: p.get(1).cloned().unwrap_or_default(),
                         kind: p.get(2).cloned().unwrap_or_else(|| "other".into()),
+                        // CLI claims declare no evidence links: the
+                        // relationship stays unknown until an explicit
+                        // `claim link` act (AGENT_PROTOCOL.md §7).
+                        evidence: Vec::new(),
                     })
                     .collect();
                 let evidence = parse3(evidence)?
@@ -554,6 +567,12 @@ fn run(cli: &Cli) -> Result<u8, Error> {
                         summary: p.first().cloned().unwrap_or_default(),
                         severity: p.get(1).cloned().unwrap_or_else(|| "medium".into()),
                         classification: p.get(2).cloned().unwrap_or_else(|| "other".into()),
+                        // CLI residuals declare no links: affected claims /
+                        // origin evidence stay unknown (explicit unknowns
+                        // over fabricated history).
+                        affected_claims: Vec::new(),
+                        origin_evidence: None,
+                        affected_changes: Vec::new(),
                     })
                     .collect();
                 let out = workflow::finish_change(
@@ -722,12 +741,33 @@ fn run(cli: &Cli) -> Result<u8, Error> {
             state,
             dir,
             workspace,
+            overlay,
+            force,
             json,
         } => {
             let repo = Repo::find(cli.repo.as_deref().unwrap_or(&std::env::current_dir()?))?;
             let gid = gemel::query::resolve_state(&repo, state)?;
             let target = dir.clone().unwrap_or_else(|| repo.root().to_path_buf());
-            gemel::content::materialize(&repo, &gid, &target)?;
+            let ignore = gemel::ignore::Ignore::from_root(&target);
+            // Protection for unrecorded work: gate on the read-only removal
+            // plan BEFORE any mutation. An exact checkout at the repository
+            // root refuses to delete unignored extras unless --force.
+            if !*overlay {
+                let would_remove = gemel::content::exact_removals(&repo, &gid, &target, &ignore)?;
+                if !would_remove.is_empty() && dir.is_none() && !*force {
+                    return Err(Error::Invalid(format!(
+                        "checkout would remove {} unrecorded file(s): {}; pass --force to remove them, or --overlay to leave them",
+                        would_remove.len(),
+                        would_remove.join(", ")
+                    )));
+                }
+            }
+            let removed = if *overlay {
+                gemel::content::materialize_overlay(&repo, &gid, &target)?;
+                Vec::new()
+            } else {
+                gemel::content::materialize_exact(&repo, &gid, &target, &ignore)?
+            };
             repo.with_write_lock(|| {
                 match workspace {
                     Some(w) => workflow::set_workspace_named_state(&repo, w, gid)?,
@@ -738,10 +778,20 @@ fn run(cli: &Cli) -> Result<u8, Error> {
             if *json {
                 print_json(
                     "checkout",
-                    json!({ "state": gid.to_string(), "dir": target.display().to_string() }),
+                    json!({
+                        "state": gid.to_string(),
+                        "dir": target.display().to_string(),
+                        "mode": if *overlay { "overlay" } else { "exact" },
+                        "removed": removed,
+                    }),
                 );
             } else {
                 println!("checked out {gid} into {}", target.display());
+                if *overlay {
+                    println!("  mode: overlay (extra files untouched)");
+                } else if !removed.is_empty() {
+                    println!("  removed: {}", removed.join(", "));
+                }
                 if let Some(w) = workspace {
                     println!("  workspace: {w}");
                 }

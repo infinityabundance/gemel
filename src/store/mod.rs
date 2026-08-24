@@ -485,6 +485,19 @@ impl Repo {
         self.with_write_lock(|| index::rebuild(self))
     }
 
+    /// A canonical object scan: every object on disk, decoded, deterministic
+    /// order. Corrupt objects are skipped (fsck reports them). Used by
+    /// derived queries as the always-correct slow path.
+    pub fn scan_canonical(&self) -> Vec<(Gid, Object)> {
+        index::scan_canonical(self)
+    }
+
+    /// Whether the derived index may be consulted as an accelerator (never
+    /// as an oracle; INVARIANTS DER-01).
+    pub fn index_is_fresh(&self) -> bool {
+        index::is_fresh(self)
+    }
+
     /// Runs the full repository verification (STORAGE.md §8).
     pub fn fsck(&self, opts: &fsck::FsckOptions) -> Result<fsck::FsckReport, Error> {
         fsck::run(self, opts)

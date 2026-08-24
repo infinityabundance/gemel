@@ -19,25 +19,98 @@ pub struct Snapshot {
     pub files: usize,
     pub symlinks: usize,
     pub bytes: u64,
+    /// Whether the captured state was observationally coherent: every
+    /// entry's (size, mtime) was re-verified after reading, so the captured
+    /// bytes correspond to a single observed moment (brief §34, forensic
+    /// provenance). `false` means the working tree was mutating during
+    /// capture and the state may not have existed at any single instant.
+    pub coherent: bool,
+    /// Capture attempts before coherence was achieved (or the cap reached).
+    pub attempts: u32,
 }
 
-// ---------------------------------------------------------------------------
-// Working tree → state
-// ---------------------------------------------------------------------------
+/// Maximum capture attempts before recording an incoherent state.
+pub const MAX_CAPTURE_ATTEMPTS: u32 = 3;
+
+/// One entry observed during capture (for coherence verification).
+#[derive(Debug, Clone)]
+struct CapturedEntry {
+    path: String,
+    is_dir: bool,
+    size: u64,
+    mtime_ns: i64,
+}
+
+fn mtime_ns(md: &std::fs::Metadata) -> i64 {
+    use std::time::UNIX_EPOCH;
+    md.modified()
+        .ok()
+        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+        .map(|d| d.as_nanos() as i64)
+        .unwrap_or(0)
+}
 
 /// Snapshots the working tree at `root` into a canonical state (inserts all
 /// blobs, trees, and the state object).
+///
+/// Coherence protocol: entries are recorded with their (size, mtime) as they
+/// are read; afterwards every entry is re-statted. A mismatch means the
+/// working tree mutated mid-capture — retry up to `MAX_CAPTURE_ATTEMPTS`;
+/// if the tree is still unstable, the state is recorded with
+/// `capture.coherent = false` rather than silently claiming a coherent
+/// observation (brief §34: a State must know whether it was observationally
+/// coherent).
 pub fn build_state(repo: &Repo, root: &Path, ignore: &Ignore) -> Result<Snapshot, Error> {
-    let mut stats = Snapshot {
-        state: Gid::new(Family::State, [0u8; 32]),
-        files: 0,
-        symlinks: 0,
-        bytes: 0,
-    };
-    let root_tree = build_tree(repo, root, "", ignore, &mut stats)?;
-    let state = Object::fields(Family::State, vec![Field::new(0x01, Value::Gid(root_tree))]);
-    stats.state = repo.insert_object(&state)?;
-    Ok(stats)
+    let mut attempts = 0u32;
+    loop {
+        attempts += 1;
+        let mut stats = Snapshot {
+            state: Gid::new(Family::State, [0u8; 32]),
+            files: 0,
+            symlinks: 0,
+            bytes: 0,
+            coherent: false,
+            attempts,
+        };
+        let mut log: Vec<CapturedEntry> = Vec::new();
+        let root_tree = build_tree(repo, root, "", ignore, &mut stats, &mut log)?;
+        let coherent = verify_capture(root, &log)?;
+        if coherent || attempts >= MAX_CAPTURE_ATTEMPTS {
+            stats.coherent = coherent;
+            // The capture record (state extension 0x80, Raw) is the coherence
+            // attestation: whether the bytes correspond to a single observed
+            // moment, and how many attempts it took. Canonical JSON with
+            // sorted keys — deterministic; identical stable captures
+            // deduplicate to the same state identity. No timestamp.
+            let capture_json = serde_json::json!({ "coherent": coherent, "attempts": attempts });
+            let capture_bytes =
+                serde_json::to_vec(&capture_json).map_err(|e| Error::Invalid(e.to_string()))?;
+            let state = Object::fields(
+                Family::State,
+                vec![
+                    Field::new(0x01, Value::Gid(root_tree)),
+                    Field::new(0x80, Value::Raw(capture_bytes)),
+                ],
+            );
+            stats.state = repo.insert_object(&state)?;
+            return Ok(stats);
+        }
+    }
+}
+
+/// Re-stats every captured entry and reports whether (size, mtime, type)
+/// still match what was observed during the read walk.
+fn verify_capture(root: &Path, log: &[CapturedEntry]) -> Result<bool, Error> {
+    for e in log {
+        let md = match std::fs::symlink_metadata(root.join(&e.path)) {
+            Ok(m) => m,
+            Err(_) => return Ok(false), // disappeared mid-capture
+        };
+        if md.is_dir() != e.is_dir || md.len() != e.size || mtime_ns(&md) != e.mtime_ns {
+            return Ok(false);
+        }
+    }
+    Ok(true)
 }
 
 // ---------------------------------------------------------------------------
@@ -126,13 +199,16 @@ fn build_tree_from_files(
     build_tree_object(entries)
 }
 
-/// Recursively builds a tree object for `dir` (canonical relative path `rel`).
+/// Recursively builds a tree object for `dir` (canonical relative path `rel`),
+/// recording every observed entry (path, type, size, mtime) for the capture
+/// coherence verification.
 fn build_tree(
     repo: &Repo,
     dir: &Path,
     rel: &str,
     ignore: &Ignore,
     stats: &mut Snapshot,
+    log: &mut Vec<CapturedEntry>,
 ) -> Result<Gid, Error> {
     let mut entries: Vec<(String, u64, Gid)> = Vec::new();
     let mut names: Vec<String> = Vec::new();
@@ -142,7 +218,8 @@ fn build_tree(
         if name == crate::store::META_DIR {
             continue; // repository metadata is never captured
         }
-        let is_dir = entry.file_type()?.is_dir();
+        let md = entry.metadata()?;
+        let is_dir = md.is_dir();
         let full_rel = if rel.is_empty() {
             name.clone()
         } else {
@@ -154,6 +231,12 @@ fn build_tree(
         if ignore.is_ignored(&full_rel, is_dir) {
             continue;
         }
+        log.push(CapturedEntry {
+            path: full_rel.clone(),
+            is_dir,
+            size: md.len(),
+            mtime_ns: mtime_ns(&md),
+        });
         names.push(name.clone());
         entries.push((name, 0, Gid::new(Family::Blob, [0u8; 32])));
     }
@@ -169,7 +252,7 @@ fn build_tree(
             format!("{rel}/{name}")
         };
         if ft.is_dir() {
-            let subtree = build_tree(repo, &dir.join(name), &full_rel, ignore, stats)?;
+            let subtree = build_tree(repo, &dir.join(name), &full_rel, ignore, stats, log)?;
             sorted.push((name.clone(), 0o040000, subtree));
         } else if ft.is_symlink() {
             let target = std::fs::read_link(dir.join(name))?;
@@ -271,9 +354,11 @@ fn is_executable(_md: &std::fs::Metadata) -> bool {
 // State → working tree
 // ---------------------------------------------------------------------------
 
-/// Materializes `state` into `target` (STORAGE.md §6.2). Existing files are
-/// overwritten; files not in the state are left untouched.
-pub fn materialize(repo: &Repo, state: &Gid, target: &Path) -> Result<(), Error> {
+/// Materializes `state` into `target` with **overlay** semantics: existing
+/// files are overwritten; files not in the state are left untouched.
+/// This is the conservative primitive (like git checkout leaving untracked
+/// files alone). For exact reconstruction use [`materialize_exact`].
+pub fn materialize_overlay(repo: &Repo, state: &Gid, target: &Path) -> Result<(), Error> {
     let st = repo.load(state)?;
     if st.family != Family::State {
         return Err(Error::Invalid(format!("{state} is not a state object")));
@@ -284,6 +369,145 @@ pub fn materialize(repo: &Repo, state: &Gid, target: &Path) -> Result<(), Error>
         std::fs::create_dir_all(target)?;
     }
     write_tree(repo, &root_tree, target)
+}
+
+/// Materializes `state` into `target` with **exact** semantics: after
+/// writing the tree, entries not present in the state are removed, so the
+/// target's tracked content equals the state. Protected from deletion:
+/// repository metadata (`.gemel`), an enclosing Git metadata directory
+/// (`.git`), the root `.gitignore` (configuration, never content —
+/// STORAGE.md §6), and any path the ignore rules declare non-content
+/// (unrecorded work is never silently destroyed). Returns the removed paths.
+pub fn materialize_exact(
+    repo: &Repo,
+    state: &Gid,
+    target: &Path,
+    ignore: &Ignore,
+) -> Result<Vec<String>, Error> {
+    materialize_overlay(repo, state, target)?;
+    let expected: std::collections::HashSet<String> =
+        state_files(repo, state)?.into_keys().collect();
+    let mut removed = Vec::new();
+    remove_unexpected(repo, target, "", &expected, ignore, &mut removed)?;
+    Ok(removed)
+}
+
+/// The paths an exact materialization *would* remove, without touching the
+/// filesystem. Lets callers gate destruction of unrecorded work before any
+/// mutation happens.
+pub fn exact_removals(
+    repo: &Repo,
+    state: &Gid,
+    target: &Path,
+    ignore: &Ignore,
+) -> Result<Vec<String>, Error> {
+    let expected: std::collections::HashSet<String> =
+        state_files(repo, state)?.into_keys().collect();
+    let mut removed = Vec::new();
+    collect_removals(target, "", &expected, ignore, &mut removed)?;
+    Ok(removed)
+}
+
+/// The removal decision for one entry (shared by the exact materializer and
+/// its read-only planner).
+fn should_remove(
+    full_rel: &str,
+    is_dir: bool,
+    expected: &std::collections::HashSet<String>,
+    ignore: &Ignore,
+) -> bool {
+    // Protected: repository metadata, enclosing Git metadata, and the root
+    // .gitignore (configuration, never content).
+    if full_rel == crate::store::META_DIR || full_rel == ".git" || is_meta_path(full_rel) {
+        return false;
+    }
+    if expected.contains(full_rel) {
+        return false;
+    }
+    // Protected: ignored paths are declared non-content (unrecorded work /
+    // artifacts by policy).
+    if ignore.is_ignored(full_rel, is_dir) {
+        return false;
+    }
+    true
+}
+
+/// Recursively removes entries not in `expected`, protecting metadata,
+/// configuration, and ignored paths (see [`materialize_exact`]).
+fn remove_unexpected(
+    repo: &Repo,
+    dir: &Path,
+    rel: &str,
+    expected: &std::collections::HashSet<String>,
+    ignore: &Ignore,
+    removed: &mut Vec<String>,
+) -> Result<(), Error> {
+    let entries = match std::fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(e.into()),
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().to_string();
+        let full_rel = if rel.is_empty() {
+            name.clone()
+        } else {
+            format!("{rel}/{name}")
+        };
+        let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
+        let path = entry.path();
+        if expected.contains(&full_rel) {
+            if is_dir {
+                remove_unexpected(repo, &path, &full_rel, expected, ignore, removed)?;
+            }
+            continue;
+        }
+        if should_remove(&full_rel, is_dir, expected, ignore) {
+            let _ = repo;
+            if is_dir {
+                std::fs::remove_dir_all(&path)?;
+            } else {
+                std::fs::remove_file(&path)?;
+            }
+            removed.push(full_rel);
+        }
+    }
+    Ok(())
+}
+
+/// Read-only variant of [`remove_unexpected`]: records what would be
+/// removed without deleting anything.
+fn collect_removals(
+    dir: &Path,
+    rel: &str,
+    expected: &std::collections::HashSet<String>,
+    ignore: &Ignore,
+    removed: &mut Vec<String>,
+) -> Result<(), Error> {
+    let entries = match std::fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(e.into()),
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().to_string();
+        let full_rel = if rel.is_empty() {
+            name.clone()
+        } else {
+            format!("{rel}/{name}")
+        };
+        let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
+        if expected.contains(&full_rel) {
+            if is_dir {
+                collect_removals(&entry.path(), &full_rel, expected, ignore, removed)?;
+            }
+            continue;
+        }
+        if should_remove(&full_rel, is_dir, expected, ignore) {
+            removed.push(full_rel);
+        }
+    }
+    Ok(())
 }
 
 fn write_tree(repo: &Repo, tree: &Gid, dir: &Path) -> Result<(), Error> {
@@ -1144,6 +1368,68 @@ pub fn split_lines(content: &str) -> Vec<&str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn capture_records_coherence() {
+        let (repo, root) = crate::store::testing::fresh_repo("capture");
+        std::fs::create_dir_all(root.join("sub")).unwrap();
+        std::fs::write(root.join("a.txt"), "hello\n").unwrap();
+        std::fs::write(root.join("sub/b.txt"), "world\n").unwrap();
+        let ignore = Ignore::default();
+        let snap = build_state(&repo, &root, &ignore).unwrap();
+        assert!(snap.coherent, "stable tree captures coherently");
+        assert_eq!(snap.attempts, 1);
+        assert_eq!(snap.files, 2);
+        // The state object carries the capture record (extension 0x80, Raw:
+        // canonical JSON).
+        let obj = repo.load(&snap.state).unwrap();
+        let fields = obj.field_sequence().unwrap();
+        match crate::query::value_at(fields, 0x80).unwrap() {
+            Value::Raw(bytes) => {
+                let record: serde_json::Value =
+                    serde_json::from_slice(bytes).expect("capture record is JSON");
+                assert_eq!(record["coherent"], true);
+                assert_eq!(record["attempts"], 1);
+            }
+            _ => panic!("capture record must be a raw extension"),
+        }
+        // Identical stable captures deduplicate to the same state identity.
+        let snap2 = build_state(&repo, &root, &ignore).unwrap();
+        assert_eq!(snap.state, snap2.state);
+        assert!(snap2.coherent);
+    }
+
+    #[test]
+    fn verify_capture_detects_mutation() {
+        let root = crate::store::testing::temp_root("verify-capture");
+        std::fs::create_dir_all(root.join("d")).unwrap();
+        let p = root.join("d/f.txt");
+        std::fs::write(&p, "one\n").unwrap();
+        let fmd = std::fs::symlink_metadata(&p).unwrap();
+        let dmd = std::fs::symlink_metadata(root.join("d")).unwrap();
+        let log = vec![
+            CapturedEntry {
+                path: "d".into(),
+                is_dir: true,
+                size: dmd.len(),
+                mtime_ns: mtime_ns(&dmd),
+            },
+            CapturedEntry {
+                path: "d/f.txt".into(),
+                is_dir: false,
+                size: fmd.len(),
+                mtime_ns: mtime_ns(&fmd),
+            },
+        ];
+        assert!(verify_capture(&root, &log).unwrap());
+        // Mutate the file: size + mtime change → incoherent.
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        std::fs::write(&p, "one\ntwo\n").unwrap();
+        assert!(!verify_capture(&root, &log).unwrap());
+        // Deleting the entry is also incoherent.
+        std::fs::remove_file(&p).unwrap();
+        assert!(!verify_capture(&root, &log).unwrap());
+    }
 
     fn diff_str(a: &str, b: &str) -> String {
         let al: Vec<&str> = split_lines(a);
