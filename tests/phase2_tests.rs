@@ -147,6 +147,7 @@ fn seed_acceptance_demo(root: &Path) -> Demo {
                 severity: "high".into(),
                 classification: "platform_divergence".into(),
             }],
+            ..Default::default()
         },
     )
     .unwrap();

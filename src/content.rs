@@ -9,6 +9,7 @@ use crate::gid::Gid;
 use crate::ignore::Ignore;
 use crate::store::{Error, Repo};
 use crate::value::{Field, Object, Value};
+use std::collections::BTreeMap;
 use std::path::Path;
 
 /// Result of snapshotting a working tree into a canonical state.
@@ -37,6 +38,92 @@ pub fn build_state(repo: &Repo, root: &Path, ignore: &Ignore) -> Result<Snapshot
     let state = Object::fields(Family::State, vec![Field::new(0x01, Value::Gid(root_tree))]);
     stats.state = repo.insert_object(&state)?;
     Ok(stats)
+}
+
+// ---------------------------------------------------------------------------
+// Flat file map → state (used by reconciliation merges)
+// ---------------------------------------------------------------------------
+
+/// The in-memory identity of an object: canonical bytes → BLAKE3 digest,
+/// without publishing. Used by read-only plans (AGENT_PROTOCOL.md §5.10).
+pub fn object_identity(repo: &Repo, obj: &Object) -> Result<Gid, Error> {
+    let bytes = crate::encode::encode_object(obj, &repo.limits())?;
+    let digest = crate::hash::object_id_bytes(&bytes);
+    Ok(Gid::new(obj.family, digest))
+}
+
+/// Computes the would-be identities of the root tree and state for a flat
+/// `path -> (mode, blob)` file map, without publishing any object.
+pub fn state_identity_from_files(
+    repo: &Repo,
+    files: &std::collections::BTreeMap<String, (u64, Gid)>,
+) -> Result<(Gid, Gid), Error> {
+    let tree = build_tree_from_files(repo, files, "")?;
+    let tree_id = object_identity(repo, &tree)?;
+    let state = Object::fields(Family::State, vec![Field::new(0x01, Value::Gid(tree_id))]);
+    let state_id = object_identity(repo, &state)?;
+    Ok((tree_id, state_id))
+}
+
+/// Publishes a state from a flat `path -> (mode, blob)` file map
+/// (reconciliation merge results). Blobs must already exist; trees and the
+/// state object are inserted.
+pub fn build_state_from_files(
+    repo: &Repo,
+    files: &std::collections::BTreeMap<String, (u64, Gid)>,
+) -> Result<Gid, Error> {
+    let tree = build_tree_from_files(repo, files, "")?;
+    let tree_id = repo.insert_object(&tree)?;
+    let state = Object::fields(Family::State, vec![Field::new(0x01, Value::Gid(tree_id))]);
+    repo.insert_object(&state)
+}
+
+/// Recursively builds a tree object (in memory) for the entries under
+/// `prefix`. Fail-closed on a path that is both a file and a directory.
+fn build_tree_from_files(
+    repo: &Repo,
+    files: &std::collections::BTreeMap<String, (u64, Gid)>,
+    prefix: &str,
+) -> Result<Object, Error> {
+    let mut names: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    for path in files.keys() {
+        let rest = match prefix {
+            "" => path.as_str(),
+            p => path
+                .strip_prefix(&format!("{p}/"))
+                .ok_or_else(|| Error::Path(format!("{path} outside prefix {p}")))?,
+        };
+        if let Some(seg) = rest.split('/').next() {
+            names.insert(seg.to_string());
+        }
+    }
+    let mut entries: Vec<(String, u64, Gid)> = Vec::new();
+    for name in names {
+        let child_prefix = if prefix.is_empty() {
+            name.clone()
+        } else {
+            format!("{prefix}/{name}")
+        };
+        let is_dir = files
+            .keys()
+            .any(|p| p.starts_with(&format!("{child_prefix}/")));
+        if is_dir {
+            if files.contains_key(&child_prefix) {
+                return Err(Error::Path(format!(
+                    "{child_prefix} is both a file and a directory"
+                )));
+            }
+            let subtree = build_tree_from_files(repo, files, &child_prefix)?;
+            let id = object_identity(repo, &subtree)?;
+            entries.push((name, 0o040000, id));
+        } else {
+            let (mode, blob) = files
+                .get(&child_prefix)
+                .ok_or_else(|| Error::Path(format!("missing file entry {child_prefix}")))?;
+            entries.push((name, *mode, *blob));
+        }
+    }
+    build_tree_object(entries)
 }
 
 /// Recursively builds a tree object for `dir` (canonical relative path `rel`).
@@ -150,6 +237,19 @@ fn build_tree_object(entries: Vec<(String, u64, Gid)>) -> Result<Object, Error> 
         Family::Tree,
         vec![Field::new(0x01, Value::Array(items))],
     ))
+}
+
+/// The flattened file map of a state: `path -> (mode, blob)`, deterministic
+/// order.
+pub fn state_files(repo: &Repo, state: &Gid) -> Result<BTreeMap<String, (u64, Gid)>, Error> {
+    let st = repo.load(state)?;
+    if st.family != Family::State {
+        return Err(Error::Invalid(format!("{state} is not a state object")));
+    }
+    let tree =
+        find_gid(&st, 0x01).ok_or_else(|| Error::Invalid("state has no root_tree".into()))?;
+    let flat = flatten_tree(repo, &tree)?;
+    Ok(flat.into_iter().collect())
 }
 
 fn blob_bytes(blob: &Object) -> &[u8] {

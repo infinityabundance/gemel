@@ -97,6 +97,10 @@ enum Command {
         /// Target directory (default: repository root).
         #[arg(long)]
         dir: Option<PathBuf>,
+        /// Named workspace whose materialized-state record to update
+        /// (default: `default`).
+        #[arg(long)]
+        workspace: Option<String>,
         #[arg(long)]
         json: bool,
     },
@@ -204,6 +208,20 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// Reconcile trajectories into a chosen direction.
+    Reconcile {
+        /// Input trajectories (2+).
+        #[arg(required = true, num_args = 2..)]
+        trajectories: Vec<String>,
+        /// Dry-run: analyze only, publish nothing.
+        #[arg(long)]
+        plan: bool,
+        /// Advance head, state/head, and the workspace to the result.
+        #[arg(long)]
+        apply: bool,
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -238,6 +256,12 @@ enum ChangeCmd {
         /// Producer identity/name (default: repository default).
         #[arg(long)]
         producer: Option<String>,
+        /// Named workspace (default: `default`).
+        #[arg(long)]
+        workspace: Option<String>,
+        /// Working directory the change will be finished from.
+        #[arg(long)]
+        worktree: Option<PathBuf>,
         #[arg(long)]
         json: bool,
     },
@@ -254,6 +278,12 @@ enum ChangeCmd {
         /// Residual: summary|severity|classification
         #[arg(long)]
         residual: Vec<String>,
+        /// Named workspace (default: `default`).
+        #[arg(long)]
+        workspace: Option<String>,
+        /// Working directory to snapshot (default: repository root).
+        #[arg(long)]
+        worktree: Option<PathBuf>,
         #[arg(long)]
         json: bool,
     },
@@ -436,6 +466,8 @@ fn run(cli: &Cli) -> Result<u8, Error> {
                 intent,
                 intent_summary,
                 producer,
+                workspace,
+                worktree,
                 json,
             } => {
                 let repo = Repo::find(cli.repo.as_deref().unwrap_or(&std::env::current_dir()?))?;
@@ -446,6 +478,8 @@ fn run(cli: &Cli) -> Result<u8, Error> {
                         intent: intent.as_deref().map(|s| repo.resolve(s)).transpose()?,
                         intent_summary: intent_summary.clone(),
                         producer: producer.as_deref().map(|s| repo.resolve(s)).transpose()?,
+                        workspace: workspace.clone(),
+                        worktree: worktree.clone(),
                     },
                 )?;
                 if *json {
@@ -456,6 +490,7 @@ fn run(cli: &Cli) -> Result<u8, Error> {
                             "intent": out.intent.map(|g| g.to_string()),
                             "intent_name": out.intent_name,
                             "producer": out.producer.to_string(),
+                            "workspace": workspace,
                         }),
                     );
                 } else {
@@ -469,6 +504,9 @@ fn run(cli: &Cli) -> Result<u8, Error> {
                     if let Some(s) = out.input_state {
                         println!("  input state: {s}");
                     }
+                    if let Some(w) = workspace {
+                        println!("  workspace: {w}");
+                    }
                 }
                 Ok(0)
             }
@@ -477,6 +515,8 @@ fn run(cli: &Cli) -> Result<u8, Error> {
                 claim,
                 evidence,
                 residual,
+                workspace,
+                worktree,
                 json,
             } => {
                 let repo = Repo::find(cli.repo.as_deref().unwrap_or(&std::env::current_dir()?))?;
@@ -523,6 +563,8 @@ fn run(cli: &Cli) -> Result<u8, Error> {
                         claims,
                         evidence,
                         residuals,
+                        workspace: workspace.clone(),
+                        worktree: worktree.clone(),
                     },
                 )?;
                 if *json {
@@ -676,13 +718,21 @@ fn run(cli: &Cli) -> Result<u8, Error> {
                 }
             }
         }
-        Command::Checkout { state, dir, json } => {
+        Command::Checkout {
+            state,
+            dir,
+            workspace,
+            json,
+        } => {
             let repo = Repo::find(cli.repo.as_deref().unwrap_or(&std::env::current_dir()?))?;
             let gid = gemel::query::resolve_state(&repo, state)?;
             let target = dir.clone().unwrap_or_else(|| repo.root().to_path_buf());
             gemel::content::materialize(&repo, &gid, &target)?;
             repo.with_write_lock(|| {
-                workflow::set_workspace_state(&repo, gid)?;
+                match workspace {
+                    Some(w) => workflow::set_workspace_named_state(&repo, w, gid)?,
+                    None => workflow::set_workspace_state(&repo, gid)?,
+                }
                 Ok(())
             })?;
             if *json {
@@ -692,6 +742,9 @@ fn run(cli: &Cli) -> Result<u8, Error> {
                 );
             } else {
                 println!("checked out {gid} into {}", target.display());
+                if let Some(w) = workspace {
+                    println!("  workspace: {w}");
+                }
             }
             Ok(0)
         }
@@ -1156,6 +1209,79 @@ fn run(cli: &Cli) -> Result<u8, Error> {
                 }
                 if bundle.items.is_empty() {
                     println!("nothing relevant found");
+                }
+            }
+            Ok(0)
+        }
+        Command::Reconcile {
+            trajectories,
+            plan,
+            apply,
+            json,
+        } => {
+            let repo = Repo::find(cli.repo.as_deref().unwrap_or(&std::env::current_dir()?))?;
+            let inputs: Vec<gemel::reconcile::ReconcileInput> = trajectories
+                .iter()
+                .map(|t| {
+                    let gid = repo.resolve(t)?;
+                    let obj = repo.load(&gid)?;
+                    if obj.family != gemel::family::Family::Trajectory {
+                        return Err(Error::Invalid(format!("{t} is not a trajectory")));
+                    }
+                    Ok(gemel::reconcile::ReconcileInput {
+                        name: t.clone(),
+                        gid,
+                    })
+                })
+                .collect::<Result<Vec<_>, Error>>()?;
+            if *plan {
+                let p = gemel::reconcile::analyze(&repo, &inputs)?;
+                if *json {
+                    print_json("reconcile", reconcile_plan_json(&p, true));
+                } else {
+                    render_reconcile_plan(&repo, &p)?;
+                }
+            } else {
+                let out = gemel::reconcile::reconcile(
+                    &repo,
+                    &inputs,
+                    &gemel::reconcile::ReconcileOptions {
+                        apply: *apply,
+                        producer: None,
+                    },
+                )?;
+                if *json {
+                    let mut result = reconcile_plan_json(&out.plan, false);
+                    if let Some(o) = result.as_object_mut() {
+                        o.insert(
+                            "reconciliation".into(),
+                            json!(out.reconciliation.to_string()),
+                        );
+                        o.insert("reconciliation_name".into(), json!(out.reconciliation_name));
+                        o.insert("change".into(), json!(out.change.to_string()));
+                        o.insert("change_name".into(), json!(out.change_name));
+                        o.insert("state".into(), json!(out.state.to_string()));
+                        o.insert("state_name".into(), json!(out.state_name));
+                        o.insert("applied".into(), json!(apply));
+                    }
+                    print_json("reconcile", result);
+                } else {
+                    println!(
+                        "{}: {} adopted, {} rejected (resulting state {})",
+                        out.reconciliation_name,
+                        out.plan.adopted.len(),
+                        out.plan.rejected.len(),
+                        out.state_name
+                    );
+                    println!("  reconciliation: {}", out.reconciliation);
+                    println!("  resulting change: {} ({})", out.change_name, out.change);
+                    println!("  resulting state: {}", out.state);
+                    for c in &out.plan.textual_conflicts {
+                        println!("  conflict: {}", c.path);
+                    }
+                    if *apply {
+                        println!("  applied: head + workspace advanced");
+                    }
                 }
             }
             Ok(0)
@@ -1746,6 +1872,73 @@ fn render_trajectory(repo: &Repo, detail: &gemel::query::TrajectoryDetail) -> Re
             println!("  handoff: {s}");
         }
     }
+    Ok(())
+}
+
+/// The reconcile plan as JSON (AGENT_PROTOCOL.md §5.10).
+fn reconcile_plan_json(p: &gemel::reconcile::ReconcilePlan, is_plan: bool) -> serde_json::Value {
+    json!({
+        "inputs": p.inputs.iter().map(|i| json!({ "name": i.name, "id": i.gid.to_string() })).collect::<Vec<_>>(),
+        "textual_conflicts": p.textual_conflicts.iter().map(|c| json!({
+            "path": c.path,
+            "changes": c.changes.iter().map(|g| g.to_string()).collect::<Vec<_>>(),
+        })).collect::<Vec<_>>(),
+        "semantic_interactions": p.interactions.iter().map(|i| json!({
+            "kind": i.kind,
+            "certainty": i.certainty,
+            "detail": i.detail,
+            "subjects": i.subjects.iter().map(|g| g.to_string()).collect::<Vec<_>>(),
+        })).collect::<Vec<_>>(),
+        "claims": {
+            "retained": p.claims_retained.iter().map(|g| g.to_string()).collect::<Vec<_>>(),
+            "invalidated": p.claims_invalidated.iter().map(|g| g.to_string()).collect::<Vec<_>>(),
+            "verification_required": p.verification_required.iter().map(|g| g.to_string()).collect::<Vec<_>>(),
+        },
+        "evidence_retained": p.evidence_retained.iter().map(|g| g.to_string()).collect::<Vec<_>>(),
+        "unresolved_residuals": p.unresolved_residuals.iter().map(|g| g.to_string()).collect::<Vec<_>>(),
+        "resulting_state": p.resulting_state.to_string(),
+        "adopted": p.adopted.iter().map(|g| g.to_string()).collect::<Vec<_>>(),
+        "rejected": p.rejected.iter().map(|g| g.to_string()).collect::<Vec<_>>(),
+        "rationale": p.rationale,
+        "mode": if is_plan { "plan" } else { "executed" },
+    })
+}
+
+fn render_reconcile_plan(repo: &Repo, p: &gemel::reconcile::ReconcilePlan) -> Result<(), Error> {
+    let _ = repo;
+    println!("reconcile plan (dry-run; nothing published)");
+    println!(
+        "  inputs: {}",
+        p.inputs
+            .iter()
+            .map(|i| i.name.clone())
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
+    if p.textual_conflicts.is_empty() {
+        println!("  textual conflicts: none");
+    } else {
+        for c in &p.textual_conflicts {
+            println!("  textual conflict: {} ({})", c.path, ids(&c.changes));
+        }
+    }
+    for i in &p.interactions {
+        println!("  interaction [{}] {}: {}", i.kind, i.certainty, i.detail);
+    }
+    println!(
+        "  adopted: {}  rejected: {}",
+        ids(&p.adopted),
+        ids(&p.rejected)
+    );
+    println!(
+        "  claims retained: {}  invalidated: {}  verification required: {}",
+        p.claims_retained.len(),
+        p.claims_invalidated.len(),
+        p.verification_required.len()
+    );
+    println!("  unresolved residuals: {}", p.unresolved_residuals.len());
+    println!("  resulting state: {}", p.resulting_state);
+    println!("  rationale: {}", p.rationale);
     Ok(())
 }
 

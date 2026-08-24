@@ -36,6 +36,7 @@ pub mod ignore;
 pub mod json;
 pub mod limits;
 pub mod query;
+pub mod reconcile;
 pub mod spec;
 pub mod store;
 pub mod validate;

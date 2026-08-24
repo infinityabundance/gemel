@@ -18,7 +18,9 @@ deterministically encoded object model implemented in native Rust.
 
 ## Status
 
-**Phase 2 — Agent-Native Value — complete.** Next: Phase 3 (Reconciliation).
+**Phase 3 — Reconciliation — complete.** Next: Phase 4 (Git Interchange).
+
+**Phase 2 — Agent-Native Value — complete.**
 
 **Phase 1 — Minimal Useful Gemel — complete.**
 
@@ -64,6 +66,22 @@ deterministically encoded object model implemented in native Rust.
 - `gemel residual resolve` — chained disposition events (open/acknowledged/resolved/…).
 - The §52 acceptance demo — two agents, no shared conversation — proven by
   `tests/phase2_tests.rs`.
+
+**Phase 3 delivers reconciliation and concurrent workspaces:**
+
+- `gemel reconcile T1 T2 [--plan|--apply]` — merges trajectories from a common base
+  into a chosen direction: adopted / rejected / unresolved residuals / claims
+  retained + invalidated / verification required / resulting State.
+- Per-path first-input-trajectory-wins adoption; textual conflicts with
+  `certainty: observed`; claim interactions with `certainty: possible` — uncertainty
+  is exposed, never invented.
+- `gemel reconcile --plan` — pure, deterministic, read-only (the resulting state
+  identity is computed in memory, nothing is published).
+- Inputs are never erased: rejected changes and their claims/evidence/residuals stay
+  canonical (negative knowledge, brief §7).
+- **Named workspaces + `--worktree`** (brief §34): `change begin/finish --workspace wa
+  --worktree /path/wa` — concurrent agents never serialize merely to avoid filesystem
+  collisions; proven by `tests/phase3_tests.rs`.
 
 ## Reading order
 

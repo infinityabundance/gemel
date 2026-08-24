@@ -367,6 +367,7 @@ fn claims_evidence_residuals_flow() {
                 severity: "high".into(),
                 classification: "platform_divergence".into(),
             }],
+            ..Default::default()
         },
     )
     .unwrap();

@@ -35,6 +35,7 @@ pub const REF_TRAJECTORIES: &str = "refs/trajectories";
 pub const REF_CASES: &str = "refs/cases";
 pub const REF_RELEASES: &str = "refs/releases";
 pub const REF_CHECKPOINTS: &str = "refs/checkpoints";
+pub const REF_RECONCILIATIONS: &str = "refs/reconciliations";
 
 /// Errors produced by the repository layer.
 #[derive(Debug)]
@@ -207,6 +208,7 @@ impl Repo {
                 "change": 0,
                 "state": 0,
                 "checkpoint": 0,
+                "reconciliation": 0,
             },
         });
         repo.write_meta(&meta_json)?;
@@ -266,12 +268,20 @@ impl Repo {
     /// Resolves a name or textual identity to an object identity.
     ///
     /// Resolution order: exact identity, `refs/names/*`, `refs/trajectories/*`,
-    /// `refs/cases/*`, `refs/releases/*`.
+    /// `refs/cases/*`, `refs/releases/*`, `refs/reconciliations/*`,
+    /// `refs/checkpoints/*`.
     pub fn resolve(&self, name_or_id: &str) -> Result<Gid, Error> {
         if let Ok(gid) = name_or_id.parse::<Gid>() {
             return Ok(gid);
         }
-        for ns in [REF_NAMES, REF_TRAJECTORIES, REF_CASES, REF_RELEASES] {
+        for ns in [
+            REF_NAMES,
+            REF_TRAJECTORIES,
+            REF_CASES,
+            REF_RELEASES,
+            REF_RECONCILIATIONS,
+            REF_CHECKPOINTS,
+        ] {
             if let Some(gid) = self.read_ref(&format!("{ns}/{name_or_id}"))? {
                 return Ok(gid);
             }

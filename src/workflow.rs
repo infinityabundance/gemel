@@ -37,22 +37,47 @@ fn s(v: &str) -> Value {
 // ---------------------------------------------------------------------------
 // Workspace metadata
 // ---------------------------------------------------------------------------
+//
+// Phase 3 adds multiple concurrent workspaces (brief §34): named workspaces
+// keep their own pending change and materialized-state records, and agents
+// may snapshot from separate working directories (`--worktree`), so they
+// never serialize merely to avoid filesystem collisions. The default
+// workspace keeps Phase 1/2 behavior.
 
 /// The workspace metadata directory.
 pub fn workspace_dir(repo: &Repo) -> PathBuf {
-    repo.meta_dir().join("worktrees").join(DEFAULT_WORKSPACE)
+    workspace_named_dir(repo, DEFAULT_WORKSPACE)
 }
 
-/// The state the workspace is currently materialized from, if any.
+/// The metadata directory of a named workspace.
+pub fn workspace_named_dir(repo: &Repo, workspace: &str) -> PathBuf {
+    if workspace.is_empty()
+        || workspace == "."
+        || workspace == ".."
+        || workspace.contains('/')
+        || workspace.contains('\\')
+        || workspace.contains('\0')
+    {
+        panic!("invalid workspace name {workspace:?}");
+    }
+    repo.meta_dir().join("worktrees").join(workspace)
+}
+
+/// The state the default workspace is currently materialized from, if any.
 pub fn workspace_state(repo: &Repo) -> Result<Option<Gid>, Error> {
-    let path = workspace_dir(repo).join("state.ref");
+    workspace_named_state(repo, DEFAULT_WORKSPACE)
+}
+
+/// The state a named workspace is currently materialized from, if any.
+pub fn workspace_named_state(repo: &Repo, workspace: &str) -> Result<Option<Gid>, Error> {
+    let path = workspace_named_dir(repo, workspace).join("state.ref");
     match std::fs::read_to_string(&path) {
         Ok(text) => text
             .trim()
             .parse::<Gid>()
             .map(Some)
             .map_err(|e| Error::RefCorrupt {
-                name: "worktree state.ref".into(),
+                name: format!("worktree {workspace} state.ref"),
                 detail: e.to_string(),
             }),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
@@ -60,9 +85,16 @@ pub fn workspace_state(repo: &Repo) -> Result<Option<Gid>, Error> {
     }
 }
 
-/// Updates the workspace's materialized state (caller holds the writer lock).
+/// Updates the default workspace's materialized state (caller holds the
+/// writer lock).
 pub fn set_workspace_state(repo: &Repo, gid: Gid) -> Result<(), Error> {
-    let dir = workspace_dir(repo);
+    set_workspace_named_state(repo, DEFAULT_WORKSPACE, gid)
+}
+
+/// Updates a named workspace's materialized state (caller holds the writer
+/// lock).
+pub fn set_workspace_named_state(repo: &Repo, workspace: &str, gid: Gid) -> Result<(), Error> {
+    let dir = workspace_named_dir(repo, workspace);
     std::fs::create_dir_all(&dir)?;
     crate::store::objects::write_atomic(
         &dir.join("state.ref"),
@@ -71,9 +103,17 @@ pub fn set_workspace_state(repo: &Repo, gid: Gid) -> Result<(), Error> {
     Ok(())
 }
 
-/// The pending change record, if any.
+/// The pending change record, if any (default workspace).
 pub fn read_pending(repo: &Repo) -> Result<Option<serde_json::Value>, Error> {
-    let path = workspace_dir(repo).join("pending.json");
+    read_pending_named(repo, DEFAULT_WORKSPACE)
+}
+
+/// The pending change record of a named workspace, if any.
+pub fn read_pending_named(
+    repo: &Repo,
+    workspace: &str,
+) -> Result<Option<serde_json::Value>, Error> {
+    let path = workspace_named_dir(repo, workspace).join("pending.json");
     match std::fs::read_to_string(&path) {
         Ok(text) => serde_json::from_str(&text)
             .map(Some)
@@ -83,8 +123,12 @@ pub fn read_pending(repo: &Repo) -> Result<Option<serde_json::Value>, Error> {
     }
 }
 
-fn write_pending(repo: &Repo, value: &serde_json::Value) -> Result<(), Error> {
-    let dir = workspace_dir(repo);
+fn write_pending_named(
+    repo: &Repo,
+    workspace: &str,
+    value: &serde_json::Value,
+) -> Result<(), Error> {
+    let dir = workspace_named_dir(repo, workspace);
     std::fs::create_dir_all(&dir)?;
     let mut bytes = serde_json::to_vec_pretty(value).map_err(|e| Error::Invalid(e.to_string()))?;
     bytes.push(b'\n');
@@ -96,7 +140,9 @@ fn write_pending(repo: &Repo, value: &serde_json::Value) -> Result<(), Error> {
 // Names and counters
 // ---------------------------------------------------------------------------
 
-fn next_name(repo: &Repo, kind: &str) -> Result<String, Error> {
+/// Advances the named counter for `kind` and returns the next human name
+/// (`I<n>`/`T<n>`/`C<n>`/`S<n>`/`K<n>`/`Re<n>`). Callers hold the writer lock.
+pub fn next_name(repo: &Repo, kind: &str) -> Result<String, Error> {
     let mut meta = repo.read_meta()?;
     let n = meta["counters"][kind].as_u64().unwrap_or(0) + 1;
     meta["counters"][kind] = serde_json::json!(n);
@@ -107,6 +153,7 @@ fn next_name(repo: &Repo, kind: &str) -> Result<String, Error> {
         "change" => "C",
         "state" => "S",
         "checkpoint" => "K",
+        "reconciliation" => "Re",
         _ => return Err(Error::Invalid(format!("unknown counter {kind}"))),
     };
     Ok(format!("{prefix}{n}"))
@@ -146,6 +193,11 @@ pub struct BeginOptions {
     pub intent_summary: Option<String>,
     /// Producer identity (default: repository default producer).
     pub producer: Option<Gid>,
+    /// Named workspace (default: `default`).
+    pub workspace: Option<String>,
+    /// Working directory the change will be finished from (default:
+    /// repository root).
+    pub worktree: Option<PathBuf>,
 }
 
 /// The outcome of `change begin`.
@@ -158,15 +210,19 @@ pub struct BeginOutcome {
     pub started_at: i64,
 }
 
-/// Opens a pending change.
+/// Opens a pending change in a (named) workspace.
 pub fn begin_change(repo: &Repo, opts: &BeginOptions) -> Result<BeginOutcome, Error> {
+    let workspace = opts
+        .workspace
+        .clone()
+        .unwrap_or_else(|| DEFAULT_WORKSPACE.to_string());
     repo.with_write_lock(|| {
-        if read_pending(repo)?.is_some() {
+        if read_pending_named(repo, &workspace)?.is_some() {
             return Err(Error::PendingChangeAlreadyExists);
         }
         let input_state = match opts.from_state {
             Some(g) => Some(g),
-            None => match workspace_state(repo)? {
+            None => match workspace_named_state(repo, &workspace)? {
                 Some(g) => Some(g),
                 None => repo.read_ref(REF_STATE_HEAD)?,
             },
@@ -203,9 +259,11 @@ pub fn begin_change(repo: &Repo, opts: &BeginOptions) -> Result<BeginOutcome, Er
             "input_state": input_state.map(|g| g.to_string()),
             "intent": intent.map(|g| g.to_string()),
             "producer": producer.to_string(),
+            "workspace": workspace,
+            "worktree": opts.worktree.clone().map(|p| p.display().to_string()),
             "started_at": now_ms(),
         });
-        write_pending(repo, &pending)?;
+        write_pending_named(repo, &workspace, &pending)?;
         Ok(BeginOutcome {
             input_state,
             intent,
@@ -251,6 +309,10 @@ pub struct FinishOptions {
     pub claims: Vec<ClaimSpec>,
     pub evidence: Vec<EvidenceSpec>,
     pub residuals: Vec<ResidualSpec>,
+    /// Named workspace (default: `default`).
+    pub workspace: Option<String>,
+    /// Working directory to snapshot (default: repository root).
+    pub worktree: Option<PathBuf>,
 }
 
 /// The outcome of `change finish`.
@@ -272,18 +334,28 @@ pub struct FinishOutcome {
 /// Finishes the pending change (SPECIFICATION.md Phase 1 demo:
 /// State S0 → Intent I1 → Trajectory T1 → Change C1 → State S1).
 pub fn finish_change(repo: &Repo, opts: &FinishOptions) -> Result<FinishOutcome, Error> {
-    // Fast-fail when nothing is pending.
-    if read_pending(repo)?.is_none() {
+    let workspace = opts
+        .workspace
+        .clone()
+        .unwrap_or_else(|| DEFAULT_WORKSPACE.to_string());
+    // Fast-fail when nothing is pending in this workspace.
+    if read_pending_named(repo, &workspace)?.is_none() {
         return Err(Error::NoPendingChange);
     }
 
     // Build the resulting state from the working tree (lock-free inserts).
-    let ignore = Ignore::from_root(repo.root());
-    let snapshot = content::build_state(repo, repo.root(), &ignore)?;
+    // The snapshot root is the change's worktree (separate agent
+    // directories are first-class, brief §34).
+    let worktree = opts
+        .worktree
+        .clone()
+        .unwrap_or_else(|| repo.root().to_path_buf());
+    let ignore = Ignore::from_root(&worktree);
+    let snapshot = content::build_state(repo, &worktree, &ignore)?;
     let resulting_state = snapshot.state;
 
     repo.with_write_lock(|| {
-        let pending = read_pending(repo)?
+        let pending = read_pending_named(repo, &workspace)?
             .ok_or_else(|| Error::Invalid("pending change disappeared mid-finish".into()))?;
         let input_state: Option<Gid> = pending["input_state"]
             .as_str()
@@ -539,10 +611,10 @@ pub fn finish_change(repo: &Repo, opts: &FinishOptions) -> Result<FinishOutcome,
         repo.apply_refs_unlocked(&RefTransaction { ops })?;
 
         // Workspace now materializes the resulting state.
-        set_workspace_state(repo, resulting_state)?;
+        set_workspace_named_state(repo, &workspace, resulting_state)?;
 
         // Clear the pending change.
-        let pending_path = workspace_dir(repo).join("pending.json");
+        let pending_path = workspace_named_dir(repo, &workspace).join("pending.json");
         match std::fs::remove_file(&pending_path) {
             Ok(()) => {}
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}

@@ -1,8 +1,7 @@
 # Gemel — Specification (Master Document)
 
-Status: **Phase 2 — Agent-Native Value — complete.** Next phase: Phase 3
-(Reconciliation).
-Document version: 1.2.0 (schema version `encver=1`, all object families `schemever=1`).
+Status: **Phase 3 — Reconciliation — complete.** Next phase: Phase 4 (Git Interchange).
+Document version: 1.3.0 (schema version `encver=1`, all object families `schemever=1`).
 Audience: implementers, protocol engineers, agent authors, maintainers.
 
 This document is the normative entry point for the Gemel project. It states what Gemel
@@ -363,6 +362,25 @@ terminal (new work on the same intent spawns a fresh attempt — §7).
 
 Phase 2 exit verified by the §11.6 conformance matrix and the §18 exit statement.
 
+### Phase 3 — Reconciliation (complete)
+
+**Entry:** Phase 2 complete. **Exit:** `gemel reconcile` using textual changes, path
+changes, explicit dependency relationships, Claims, Evidence, Residuals; produces a
+Reconciliation object (adopted / rejected / unresolved / verification required /
+resulting State); concurrent agents from the same base State demonstrated. No semantic
+claims beyond actual evidence; uncertainty is exposed, never invented.
+
+Phase 3 also delivers **multiple concurrent workspaces** (brief §34): named workspaces
+keep their own pending-change and materialized-state records, and `change
+begin/finish` accept `--workspace` and `--worktree`, so agents never serialize merely
+to avoid filesystem collisions.
+
+Adoption policy (documented in every rationale): per-path first-input-trajectory-wins.
+Textual conflicts carry `certainty: observed`; claim interactions carry `certainty:
+possible`; nothing is declared beyond the evidence (brief §13).
+
+Phase 3 exit verified by the §11.7 conformance matrix and the §19 exit statement.
+
 ### Phase 2 — Agent-Native Value
 
 **Entry:** Phase 1 complete. **Exit:** `why`, `claims`, `evidence`, `residuals`,
@@ -494,6 +512,28 @@ Every §43 requirement of the brief, bound to its implementation. Verified by
 | Progressive disclosure | context bundle levels L1/L2, expansion pointers, `omitted` (§6.1, §6.4) |
 | Negative knowledge surfaced | `attempts`/`why.previous_approaches` preserve rejected/interrupted trajectories (§7) |
 | Two-agent acceptance demo | `acceptance_demo_two_agents` (§12): T17 rejected, T18 interrupted, checkpoint, context, T19 |
+
+### 11.7 Phase 3 Conformance Matrix
+
+Every §44 requirement of the brief, bound to its implementation. Verified by
+`tests/phase3_tests.rs` (9 integration tests) including concurrent agents from the
+same base State.
+
+| Brief requirement (Phase 3) | Implementation |
+|---|---|
+| `gemel reconcile` | `reconcile::reconcile` (`src/reconcile.rs`) |
+| `gemel reconcile --plan` | `reconcile::analyze` — pure, deterministic, read-only (AGENT_PROTOCOL.md §5.10) |
+| Textual changes | operation subject paths incl. rename from/to; per-path ownership |
+| Path changes | merged file map = base + adopted deltas in application order |
+| Claims | retained (adopted) / invalidated (rejected touching adopted subjects, `possible`) |
+| Evidence | `evidence_retained` from adopted changes |
+| Residuals | open → carried forward; resolved → `resolved_residuals` (latest chain versions) |
+| Reconciliation object | adopted / rejected / unresolved / interactions / rationale / resulting State + Change (OBJECT_MODEL.md §6.17) |
+| Resulting State | deterministic merge; byte-identical between plan identity and execution |
+| Concurrent agents from one base | named workspaces + `--worktree` (brief §34) |
+| Uncertainty, never invented | `certainty: observed` textual, `certainty: possible` claim interactions |
+| Fail-closed on divergent bases | trajectories without a common base are refused with a clear error |
+| `--apply` | advances `refs/head`, `refs/state/head`, and the workspace |
 
 ---
 
@@ -633,3 +673,20 @@ Phase 2 exit verified: `cargo test` green (78 unit, 2 golden, 11 Phase 1, 10 Pha
 integration), `cargo clippy --all-targets` zero warnings, `cargo fmt --check` clean,
 golden vectors unchanged, and the acceptance demo exercised both through the library
 API and the CLI JSON surface.
+
+---
+
+## 19. Phase 3 Exit Statement
+
+Phase 3 is complete when: `gemel reconcile` operates over textual changes, path
+changes, explicit Claims, Evidence, and Residuals; produces a Reconciliation object
+recording adopted / rejected / unresolved / verification-required / resulting State
+while never erasing its inputs; concurrent agents work from the same base State in
+separate workspaces; divergent bases are refused fail-closed; uncertainty is exposed
+with calibrated `certainty` rather than invented; and every row of the §11.7 matrix is
+satisfied.
+
+Phase 3 exit verified: `cargo test` green (78 unit, 2 golden, 11 Phase 1, 10 Phase 2,
+9 Phase 3 integration), `cargo clippy --all-targets` zero warnings, `cargo fmt --check`
+clean, golden vectors unchanged, and `gemel reconcile T1 T2 [--plan|--apply]` exercised
+through both the library API and the CLI.
