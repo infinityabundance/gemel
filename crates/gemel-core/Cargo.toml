@@ -1,0 +1,8 @@
+[package]
+name = "gemel-core"
+description = "Gemel canonical primitives: varint, family table, Gid, limits."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]

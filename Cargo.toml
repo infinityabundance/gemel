@@ -1,0 +1,16 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/gemel-core",
+    "crates/gemel-object",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+
+[workspace.dependencies]
+gemel-core = { path = "crates/gemel-core" }
+blake3 = "1.5"
+serde_json = "1.0"

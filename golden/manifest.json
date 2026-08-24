@@ -1,0 +1,3299 @@
+{
+  "encver": 1,
+  "generated_at": 1787571103,
+  "generator": "gemel-object golden-gen",
+  "schema": "gemel.golden.v1",
+  "vectors": [
+    {
+      "bytes": "vectors/blob-empty.gce.hex",
+      "constructed_from": {
+        "body": "",
+        "family": "blob",
+        "schemever": 1
+      },
+      "description": "empty blob",
+      "family": "blob",
+      "id": "vectors/blob-empty.id",
+      "name": "blob-empty",
+      "references": {},
+      "schemever": 1
+    },
+    {
+      "bytes": "vectors/blob-hello.gce.hex",
+      "constructed_from": {
+        "body": "6869",
+        "family": "blob",
+        "schemever": 1
+      },
+      "description": "blob containing the bytes 0x68 0x69 (worked example, OBJECT_MODEL.md §1.8)",
+      "family": "blob",
+      "id": "vectors/blob-hello.id",
+      "name": "blob-hello",
+      "references": {},
+      "schemever": 1
+    },
+    {
+      "bytes": "vectors/blob-binary.gce.hex",
+      "constructed_from": {
+        "body": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff",
+        "family": "blob",
+        "schemever": 1
+      },
+      "description": "blob with every byte value 0x00..=0xFF",
+      "family": "blob",
+      "id": "vectors/blob-binary.id",
+      "name": "blob-binary",
+      "references": {},
+      "schemever": 1
+    },
+    {
+      "bytes": "vectors/blob-link.gce.hex",
+      "constructed_from": {
+        "body": "2e2e2f62696e2f746f6f6c",
+        "family": "blob",
+        "schemever": 1
+      },
+      "description": "blob containing a symlink target path",
+      "family": "blob",
+      "id": "vectors/blob-link.id",
+      "name": "blob-link",
+      "references": {},
+      "schemever": 1
+    },
+    {
+      "bytes": "vectors/blob-lib.gce.hex",
+      "constructed_from": {
+        "body": "70756220666e206465636f64652829207b7d0a",
+        "family": "blob",
+        "schemever": 1
+      },
+      "description": "blob containing Rust source text",
+      "family": "blob",
+      "id": "vectors/blob-lib.id",
+      "name": "blob-lib",
+      "references": {},
+      "schemever": 1
+    },
+    {
+      "bytes": "vectors/blob-script.gce.hex",
+      "constructed_from": {
+        "body": "23212f62696e2f73680a6563686f2068690a",
+        "family": "blob",
+        "schemever": 1
+      },
+      "description": "blob containing a shell script",
+      "family": "blob",
+      "id": "vectors/blob-script.id",
+      "name": "blob-script",
+      "references": {},
+      "schemever": 1
+    },
+    {
+      "bytes": "vectors/producer-human.gce.hex",
+      "constructed_from": {
+        "body": [
+          {
+            "name": "kind",
+            "tag": 1,
+            "value": "human"
+          },
+          {
+            "name": "name",
+            "tag": 2,
+            "value": "Ada Lovelace"
+          },
+          {
+            "name": "identity",
+            "tag": 3,
+            "value": [
+              {
+                "name": "human",
+                "tag": 1,
+                "value": [
+                  {
+                    "name": "name",
+                    "tag": 1,
+                    "value": "Ada Lovelace"
+                  },
+                  {
+                    "name": "email",
+                    "tag": 2,
+                    "value": "ada@example.invalid"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "name": "disclosure",
+            "tag": 4,
+            "value": "FULL"
+          },
+          {
+            "name": "created_at",
+            "tag": 6,
+            "value": "1700000000000"
+          }
+        ],
+        "family": "producer",
+        "schemever": 1
+      },
+      "description": "human producer with FULL disclosure",
+      "family": "producer",
+      "id": "vectors/producer-human.id",
+      "name": "producer-human",
+      "references": {},
+      "schemever": 1
+    },
+    {
+      "bytes": "vectors/producer-agent.gce.hex",
+      "constructed_from": {
+        "body": [
+          {
+            "name": "kind",
+            "tag": 1,
+            "value": "agent"
+          },
+          {
+            "name": "name",
+            "tag": 2,
+            "value": "agent-alpha"
+          },
+          {
+            "name": "identity",
+            "tag": 3,
+            "value": [
+              {
+                "name": "agent",
+                "tag": 2,
+                "value": [
+                  {
+                    "name": "model_family",
+                    "tag": 1,
+                    "value": "anthropic"
+                  },
+                  {
+                    "name": "model_id",
+                    "tag": 2,
+                    "value": "claude-sonnet-4"
+                  },
+                  {
+                    "name": "harness",
+                    "tag": 3,
+                    "value": "zed"
+                  },
+                  {
+                    "name": "permissions",
+                    "tag": 4,
+                    "value": [
+                      "read",
+                      "edit",
+                      "run-test"
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "name": "disclosure",
+            "tag": 4,
+            "value": "DIGEST_ONLY"
+          },
+          {
+            "name": "created_at",
+            "tag": 6,
+            "value": "1700000000000"
+          }
+        ],
+        "family": "producer",
+        "schemever": 1
+      },
+      "description": "agent producer with DIGEST_ONLY disclosure",
+      "family": "producer",
+      "id": "vectors/producer-agent.id",
+      "name": "producer-agent",
+      "references": {},
+      "schemever": 1
+    },
+    {
+      "bytes": "vectors/producer-git-import.gce.hex",
+      "constructed_from": {
+        "body": [
+          {
+            "name": "kind",
+            "tag": 1,
+            "value": "git_import"
+          },
+          {
+            "name": "name",
+            "tag": 2,
+            "value": "git-import"
+          },
+          {
+            "name": "disclosure",
+            "tag": 4,
+            "value": "DIGEST_ONLY"
+          },
+          {
+            "name": "created_at",
+            "tag": 6,
+            "value": "1700000000000"
+          }
+        ],
+        "family": "producer",
+        "schemever": 1
+      },
+      "description": "synthetic git import producer (no fabricated identity)",
+      "family": "producer",
+      "id": "vectors/producer-git-import.id",
+      "name": "producer-git-import",
+      "references": {},
+      "schemever": 1
+    },
+    {
+      "bytes": "vectors/environment-linux.gce.hex",
+      "constructed_from": {
+        "body": [
+          {
+            "name": "os",
+            "tag": 1,
+            "value": [
+              {
+                "name": "family",
+                "tag": 1,
+                "value": "linux"
+              },
+              {
+                "name": "name",
+                "tag": 2,
+                "value": "ubuntu"
+              },
+              {
+                "name": "version",
+                "tag": 3,
+                "value": "24.04"
+              },
+              {
+                "name": "kernel",
+                "tag": 4,
+                "value": "6.8"
+              }
+            ]
+          },
+          {
+            "name": "arch",
+            "tag": 2,
+            "value": "x86_64"
+          },
+          {
+            "name": "compiler",
+            "tag": 3,
+            "value": [
+              {
+                "name": "name",
+                "tag": 1,
+                "value": "gcc"
+              },
+              {
+                "name": "version",
+                "tag": 2,
+                "value": "13.2"
+              }
+            ]
+          },
+          {
+            "name": "runtime",
+            "tag": 4,
+            "value": [
+              {
+                "name": "name",
+                "tag": 1,
+                "value": "rust"
+              },
+              {
+                "name": "version",
+                "tag": 2,
+                "value": "1.80"
+              }
+            ]
+          },
+          {
+            "name": "toolchain",
+            "tag": 5,
+            "value": [
+              [
+                {
+                  "name": "name",
+                  "tag": 1,
+                  "value": "cargo"
+                },
+                {
+                  "name": "version",
+                  "tag": 2,
+                  "value": "1.80"
+                },
+                {
+                  "name": "digest",
+                  "tag": 3,
+                  "value": "0101010101010101010101010101010101010101010101010101010101010101"
+                }
+              ]
+            ]
+          },
+          {
+            "name": "hardware",
+            "tag": 6,
+            "value": [
+              {
+                "name": "cpu",
+                "tag": 1,
+                "value": "x86_64"
+              },
+              {
+                "name": "cores",
+                "tag": 2,
+                "value": "16"
+              },
+              {
+                "name": "memory_bytes",
+                "tag": 3,
+                "value": "68719476736"
+              }
+            ]
+          },
+          {
+            "name": "network",
+            "tag": 8,
+            "value": "full"
+          },
+          {
+            "name": "determinism",
+            "tag": 10,
+            "value": "fully_deterministic"
+          },
+          {
+            "name": "created_at",
+            "tag": 11,
+            "value": "1700000000000"
+          }
+        ],
+        "family": "environment",
+        "schemever": 1
+      },
+      "description": "Linux x86_64 environment manifest",
+      "family": "environment",
+      "id": "vectors/environment-linux.id",
+      "name": "environment-linux",
+      "references": {},
+      "schemever": 1
+    },
+    {
+      "bytes": "vectors/tree-sub.gce.hex",
+      "constructed_from": {
+        "body": [
+          {
+            "name": "entries",
+            "tag": 1,
+            "value": [
+              [
+                {
+                  "name": "name",
+                  "tag": 1,
+                  "value": "lib.rs"
+                },
+                {
+                  "name": "mode",
+                  "tag": 2,
+                  "value": "33188"
+                },
+                {
+                  "name": "target",
+                  "tag": 3,
+                  "value": "blob.a17102dfcad3522c3209daacccbcd33e9a61c616cf3e6b3fd46645dbbf64a5ec"
+                }
+              ]
+            ]
+          }
+        ],
+        "family": "tree",
+        "schemever": 1
+      },
+      "description": "tree with a single file entry",
+      "family": "tree",
+      "id": "vectors/tree-sub.id",
+      "name": "tree-sub",
+      "references": {
+        "blob-lib": "blob.a17102dfcad3522c3209daacccbcd33e9a61c616cf3e6b3fd46645dbbf64a5ec"
+      },
+      "schemever": 1
+    },
+    {
+      "bytes": "vectors/tree-single.gce.hex",
+      "constructed_from": {
+        "body": [
+          {
+            "name": "entries",
+            "tag": 1,
+            "value": [
+              [
+                {
+                  "name": "name",
+                  "tag": 1,
+                  "value": "a.txt"
+                },
+                {
+                  "name": "mode",
+                  "tag": 2,
+                  "value": "33188"
+                },
+                {
+                  "name": "target",
+                  "tag": 3,
+                  "value": "blob.81430b0735af52231b2addeac4d52dd1ff14abf5232d9e25602ec841a8f3517a"
+                }
+              ]
+            ]
+          }
+        ],
+        "family": "tree",
+        "schemever": 1
+      },
+      "description": "tree with one file entry",
+      "family": "tree",
+      "id": "vectors/tree-single.id",
+      "name": "tree-single",
+      "references": {
+        "blob-hello": "blob.81430b0735af52231b2addeac4d52dd1ff14abf5232d9e25602ec841a8f3517a"
+      },
+      "schemever": 1
+    },
+    {
+      "bytes": "vectors/tree-mixed.gce.hex",
+      "constructed_from": {
+        "body": [
+          {
+            "name": "entries",
+            "tag": 1,
+            "value": [
+              [
+                {
+                  "name": "name",
+                  "tag": 1,
+                  "value": "link"
+                },
+                {
+                  "name": "mode",
+                  "tag": 2,
+                  "value": "40960"
+                },
+                {
+                  "name": "target",
+                  "tag": 3,
+                  "value": "blob.faf485d0875c4decefd6a99a9622f8b4619ea146dbd29dd27783bdb7467a6f3c"
+                }
+              ],
+              [
+                {
+                  "name": "name",
+                  "tag": 1,
+                  "value": "run.sh"
+                },
+                {
+                  "name": "mode",
+                  "tag": 2,
+                  "value": "33261"
+                },
+                {
+                  "name": "target",
+                  "tag": 3,
+                  "value": "blob.a95190efa6cc2314533fc15fc38ebb369ebbf904d7a54be728cc57e4c8345185"
+                }
+              ],
+              [
+                {
+                  "name": "name",
+                  "tag": 1,
+                  "value": "sub"
+                },
+                {
+                  "name": "mode",
+                  "tag": 2,
+                  "value": "16384"
+                },
+                {
+                  "name": "target",
+                  "tag": 3,
+                  "value": "tree.4b8c2a1dbf70820400770e8e57477df166613cc5e05e7a9a5a9c4abd2c0aedd5"
+                }
+              ]
+            ]
+          }
+        ],
+        "family": "tree",
+        "schemever": 1
+      },
+      "description": "tree with symlink, executable, and directory entries",
+      "family": "tree",
+      "id": "vectors/tree-mixed.id",
+      "name": "tree-mixed",
+      "references": {
+        "blob-link": "blob.faf485d0875c4decefd6a99a9622f8b4619ea146dbd29dd27783bdb7467a6f3c",
+        "blob-script": "blob.a95190efa6cc2314533fc15fc38ebb369ebbf904d7a54be728cc57e4c8345185",
+        "tree-sub": "tree.4b8c2a1dbf70820400770e8e57477df166613cc5e05e7a9a5a9c4abd2c0aedd5"
+      },
+      "schemever": 1
+    },
+    {
+      "bytes": "vectors/tree-after.gce.hex",
+      "constructed_from": {
+        "body": [
+          {
+            "name": "entries",
+            "tag": 1,
+            "value": [
+              [
+                {
+                  "name": "name",
+                  "tag": 1,
+                  "value": "a.txt"
+                },
+                {
+                  "name": "mode",
+                  "tag": 2,
+                  "value": "33188"
+                },
+                {
+                  "name": "target",
+                  "tag": 3,
+                  "value": "blob.81430b0735af52231b2addeac4d52dd1ff14abf5232d9e25602ec841a8f3517a"
+                }
+              ],
+              [
+                {
+                  "name": "name",
+                  "tag": 1,
+                  "value": "b.txt"
+                },
+                {
+                  "name": "mode",
+                  "tag": 2,
+                  "value": "33188"
+                },
+                {
+                  "name": "target",
+                  "tag": 3,
+                  "value": "blob.a17102dfcad3522c3209daacccbcd33e9a61c616cf3e6b3fd46645dbbf64a5ec"
+                }
+              ]
+            ]
+          }
+        ],
+        "family": "tree",
+        "schemever": 1
+      },
+      "description": "tree after change-simple",
+      "family": "tree",
+      "id": "vectors/tree-after.id",
+      "name": "tree-after",
+      "references": {
+        "blob-hello": "blob.81430b0735af52231b2addeac4d52dd1ff14abf5232d9e25602ec841a8f3517a",
+        "blob-lib": "blob.a17102dfcad3522c3209daacccbcd33e9a61c616cf3e6b3fd46645dbbf64a5ec"
+      },
+      "schemever": 1
+    },
+    {
+      "bytes": "vectors/tree-final.gce.hex",
+      "constructed_from": {
+        "body": [
+          {
+            "name": "entries",
+            "tag": 1,
+            "value": [
+              [
+                {
+                  "name": "name",
+                  "tag": 1,
+                  "value": "a.txt"
+                },
+                {
+                  "name": "mode",
+                  "tag": 2,
+                  "value": "33188"
+                },
+                {
+                  "name": "target",
+                  "tag": 3,
+                  "value": "blob.a17102dfcad3522c3209daacccbcd33e9a61c616cf3e6b3fd46645dbbf64a5ec"
+                }
+              ],
+              [
+                {
+                  "name": "name",
+                  "tag": 1,
+                  "value": "b.txt"
+                },
+                {
+                  "name": "mode",
+                  "tag": 2,
+                  "value": "33188"
+                },
+                {
+                  "name": "target",
+                  "tag": 3,
+                  "value": "blob.a17102dfcad3522c3209daacccbcd33e9a61c616cf3e6b3fd46645dbbf64a5ec"
+                }
+              ]
+            ]
+          }
+        ],
+        "family": "tree",
+        "schemever": 1
+      },
+      "description": "tree after change-demo",
+      "family": "tree",
+      "id": "vectors/tree-final.id",
+      "name": "tree-final",
+      "references": {
+        "blob-lib": "blob.a17102dfcad3522c3209daacccbcd33e9a61c616cf3e6b3fd46645dbbf64a5ec"
+      },
+      "schemever": 1
+    },
+    {
+      "bytes": "vectors/state-basic.gce.hex",
+      "constructed_from": {
+        "body": [
+          {
+            "name": "root_tree",
+            "tag": 1,
+            "value": "tree.ab5e6314760254163fb56fcc8c59f7e967b5028f15c2cee2f024db7ae5a4824e"
+          }
+        ],
+        "family": "state",
+        "schemever": 1
+      },
+      "description": "repository state over tree-mixed",
+      "family": "state",
+      "id": "vectors/state-basic.id",
+      "name": "state-basic",
+      "references": {
+        "tree-mixed": "tree.ab5e6314760254163fb56fcc8c59f7e967b5028f15c2cee2f024db7ae5a4824e"
+      },
+      "schemever": 1
+    },
+    {
+      "bytes": "vectors/state-after.gce.hex",
+      "constructed_from": {
+        "body": [
+          {
+            "name": "root_tree",
+            "tag": 1,
+            "value": "tree.e2b7a2c1d0988e233b8ac06478d1ea195430d68e2113ae052ba5045060ad860c"
+          }
+        ],
+        "family": "state",
+        "schemever": 1
+      },
+      "description": "repository state over tree-after",
+      "family": "state",
+      "id": "vectors/state-after.id",
+      "name": "state-after",
+      "references": {
+        "tree-after": "tree.e2b7a2c1d0988e233b8ac06478d1ea195430d68e2113ae052ba5045060ad860c"
+      },
+      "schemever": 1
+    },
+    {
+      "bytes": "vectors/state-final.gce.hex",
+      "constructed_from": {
+        "body": [
+          {
+            "name": "root_tree",
+            "tag": 1,
+            "value": "tree.04cc3b2363aa10e67df5dfaa5ed2931f7b08ff125850a77690e59aa70d714eb5"
+          }
+        ],
+        "family": "state",
+        "schemever": 1
+      },
+      "description": "repository state over tree-final",
+      "family": "state",
+      "id": "vectors/state-final.id",
+      "name": "state-final",
+      "references": {
+        "tree-final": "tree.04cc3b2363aa10e67df5dfaa5ed2931f7b08ff125850a77690e59aa70d714eb5"
+      },
+      "schemever": 1
+    },
+    {
+      "bytes": "vectors/intent-basic.gce.hex",
+      "constructed_from": {
+        "body": [
+          {
+            "name": "summary",
+            "tag": 1,
+            "value": "Implement pointer-loop detection matching upstream behavior"
+          },
+          {
+            "name": "description",
+            "tag": 2,
+            "value": "Compressed DNS names must reject pointer loops exactly as BIND 9.20 does."
+          },
+          {
+            "name": "acceptance_criteria",
+            "tag": 3,
+            "value": [
+              "rejects pointer loops > 16",
+              "matches BIND 9.20 oracle on corpus"
+            ]
+          },
+          {
+            "name": "constraints",
+            "tag": 4,
+            "value": [
+              "no unsafe code"
+            ]
+          },
+          {
+            "name": "requested_scope",
+            "tag": 5,
+            "value": [
+              "parser::decode_name"
+            ]
+          },
+          {
+            "name": "prohibited_scope",
+            "tag": 6,
+            "value": [
+              "serializer"
+            ]
+          },
+          {
+            "name": "related_objects",
+            "tag": 7,
+            "value": [
+              "state.d5506bfe077f5f54c665950017049569b36599b86f0b668fec1076859a36254d"
+            ]
+          },
+          {
+            "name": "producer",
+            "tag": 11,
+            "value": "producer.e590ad412e8a4924ab814f0cbeb14d0b99019a46f73de836ed112df3aac0388e"
+          },
+          {
+            "name": "created_at",
+            "tag": 12,
+            "value": "1700000000000"
+          }
+        ],
+        "family": "intent",
+        "schemever": 1
+      },
+      "description": "intent: pointer-loop detection matching upstream",
+      "family": "intent",
+      "id": "vectors/intent-basic.id",
+      "name": "intent-basic",
+      "references": {
+        "producer-human": "producer.e590ad412e8a4924ab814f0cbeb14d0b99019a46f73de836ed112df3aac0388e",
+        "state-basic": "state.d5506bfe077f5f54c665950017049569b36599b86f0b668fec1076859a36254d"
+      },
+      "schemever": 1
+    },
+    {
+      "bytes": "vectors/operation-create-file.gce.hex",
+      "constructed_from": {
+        "body": [
+          {
+            "name": "op_type",
+            "tag": 1,
+            "value": "create_file"
+          },
+          {
+            "name": "subject_path",
+            "tag": 2,
+            "value": "b.txt"
+          },
+          {
+            "name": "output_refs",
+            "tag": 5,
+            "value": [
+              "blob.a17102dfcad3522c3209daacccbcd33e9a61c616cf3e6b3fd46645dbbf64a5ec"
+            ]
+          },
+          {
+            "name": "result",
+            "tag": 6,
+            "value": [
+              {
+                "name": "status",
+                "tag": 1,
+                "value": "ok"
+              }
+            ]
+          },
+          {
+            "name": "producer",
+            "tag": 7,
+            "value": "producer.e590ad412e8a4924ab814f0cbeb14d0b99019a46f73de836ed112df3aac0388e"
+          },
+          {
+            "name": "environment",
+            "tag": 8,
+            "value": "environment.dd7dbab800d3f1a9b59daa89a8b9da4ad355f97844a5b0ceb4a38d187e705385"
+          },
+          {
+            "name": "started_at",
+            "tag": 9,
+            "value": "1700000000000"
+          },
+          {
+            "name": "ended_at",
+            "tag": 10,
+            "value": "1700000000000"
+          },
+          {
+            "name": "description",
+            "tag": 11,
+            "value": "create b.txt"
+          },
+          {
+            "name": "content",
+            "tag": 17,
+            "value": "blob.a17102dfcad3522c3209daacccbcd33e9a61c616cf3e6b3fd46645dbbf64a5ec"
+          }
+        ],
+        "family": "operation",
+        "schemever": 1
+      },
+      "description": "create_file operation",
+      "family": "operation",
+      "id": "vectors/operation-create-file.id",
+      "name": "operation-create-file",
+      "references": {
+        "blob-lib": "blob.a17102dfcad3522c3209daacccbcd33e9a61c616cf3e6b3fd46645dbbf64a5ec",
+        "environment-linux": "environment.dd7dbab800d3f1a9b59daa89a8b9da4ad355f97844a5b0ceb4a38d187e705385",
+        "producer-human": "producer.e590ad412e8a4924ab814f0cbeb14d0b99019a46f73de836ed112df3aac0388e"
+      },
+      "schemever": 1
+    },
+    {
+      "bytes": "vectors/operation-write-range.gce.hex",
+      "constructed_from": {
+        "body": [
+          {
+            "name": "op_type",
+            "tag": 1,
+            "value": "write_range"
+          },
+          {
+            "name": "subject_path",
+            "tag": 2,
+            "value": "a.txt"
+          },
+          {
+            "name": "input_refs",
+            "tag": 4,
+            "value": [
+              "blob.81430b0735af52231b2addeac4d52dd1ff14abf5232d9e25602ec841a8f3517a"
+            ]
+          },
+          {
+            "name": "output_refs",
+            "tag": 5,
+            "value": [
+              "blob.a17102dfcad3522c3209daacccbcd33e9a61c616cf3e6b3fd46645dbbf64a5ec"
+            ]
+          },
+          {
+            "name": "result",
+            "tag": 6,
+            "value": [
+              {
+                "name": "status",
+                "tag": 1,
+                "value": "ok"
+              }
+            ]
+          },
+          {
+            "name": "producer",
+            "tag": 7,
+            "value": "producer.e590ad412e8a4924ab814f0cbeb14d0b99019a46f73de836ed112df3aac0388e"
+          },
+          {
+            "name": "environment",
+            "tag": 8,
+            "value": "environment.dd7dbab800d3f1a9b59daa89a8b9da4ad355f97844a5b0ceb4a38d187e705385"
+          },
+          {
+            "name": "started_at",
+            "tag": 9,
+            "value": "1700000000000"
+          },
+          {
+            "name": "ended_at",
+            "tag": 10,
+            "value": "1700000000000"
+          },
+          {
+            "name": "description",
+            "tag": 11,
+            "value": "replace first two bytes of a.txt"
+          },
+          {
+            "name": "start",
+            "tag": 18,
+            "value": "0"
+          },
+          {
+            "name": "length",
+            "tag": 19,
+            "value": "2"
+          },
+          {
+            "name": "new_content",
+            "tag": 20,
+            "value": "blob.a17102dfcad3522c3209daacccbcd33e9a61c616cf3e6b3fd46645dbbf64a5ec"
+          },
+          {
+            "name": "old_content",
+            "tag": 21,
+            "value": "blob.81430b0735af52231b2addeac4d52dd1ff14abf5232d9e25602ec841a8f3517a"
+          }
+        ],
+        "family": "operation",
+        "schemever": 1
+      },
+      "description": "write_range operation",
+      "family": "operation",
+      "id": "vectors/operation-write-range.id",
+      "name": "operation-write-range",
+      "references": {
+        "blob-hello": "blob.81430b0735af52231b2addeac4d52dd1ff14abf5232d9e25602ec841a8f3517a",
+        "blob-lib": "blob.a17102dfcad3522c3209daacccbcd33e9a61c616cf3e6b3fd46645dbbf64a5ec",
+        "environment-linux": "environment.dd7dbab800d3f1a9b59daa89a8b9da4ad355f97844a5b0ceb4a38d187e705385",
+        "producer-human": "producer.e590ad412e8a4924ab814f0cbeb14d0b99019a46f73de836ed112df3aac0388e"
+      },
+      "schemever": 1
+    },
+    {
+      "bytes": "vectors/operation-exec-command.gce.hex",
+      "constructed_from": {
+        "body": [
+          {
+            "name": "op_type",
+            "tag": 1,
+            "value": "exec_command"
+          },
+          {
+            "name": "result",
+            "tag": 6,
+            "value": [
+              {
+                "name": "status",
+                "tag": 1,
+                "value": "ok"
+              },
+              {
+                "name": "exit_code",
+                "tag": 3,
+                "value": "0"
+              }
+            ]
+          },
+          {
+            "name": "producer",
+            "tag": 7,
+            "value": "producer.fd8e2bc0eed941b331c8fa2dda3e075b7c1789000b7e06a82f0bc97f930331b8"
+          },
+          {
+            "name": "environment",
+            "tag": 8,
+            "value": "environment.dd7dbab800d3f1a9b59daa89a8b9da4ad355f97844a5b0ceb4a38d187e705385"
+          },
+          {
+            "name": "started_at",
+            "tag": 9,
+            "value": "1700000000000"
+          },
+          {
+            "name": "ended_at",
+            "tag": 10,
+            "value": "1700000000000"
+          },
+          {
+            "name": "description",
+            "tag": 11,
+            "value": "run unit tests"
+          },
+          {
+            "name": "argv",
+            "tag": 26,
+            "value": [
+              "cargo",
+              "test",
+              "--lib"
+            ]
+          },
+          {
+            "name": "cwd",
+            "tag": 27,
+            "value": "."
+          },
+          {
+            "name": "stdout_ref",
+            "tag": 29,
+            "value": "blob.a17102dfcad3522c3209daacccbcd33e9a61c616cf3e6b3fd46645dbbf64a5ec"
+          },
+          {
+            "name": "stderr_ref",
+            "tag": 30,
+            "value": "blob.7ecab352939f7dcd08466b3b1365c52ed711108c6e607cebc104701ff4bdb7e8"
+          }
+        ],
+        "family": "operation",
+        "schemever": 1
+      },
+      "description": "exec_command operation",
+      "family": "operation",
+      "id": "vectors/operation-exec-command.id",
+      "name": "operation-exec-command",
+      "references": {
+        "blob-empty": "blob.7ecab352939f7dcd08466b3b1365c52ed711108c6e607cebc104701ff4bdb7e8",
+        "blob-lib": "blob.a17102dfcad3522c3209daacccbcd33e9a61c616cf3e6b3fd46645dbbf64a5ec",
+        "environment-linux": "environment.dd7dbab800d3f1a9b59daa89a8b9da4ad355f97844a5b0ceb4a38d187e705385",
+        "producer-agent": "producer.fd8e2bc0eed941b331c8fa2dda3e075b7c1789000b7e06a82f0bc97f930331b8"
+      },
+      "schemever": 1
+    },
+    {
+      "bytes": "vectors/operation-run-test.gce.hex",
+      "constructed_from": {
+        "body": [
+          {
+            "name": "op_type",
+            "tag": 1,
+            "value": "run_test"
+          },
+          {
+            "name": "result",
+            "tag": 6,
+            "value": [
+              {
+                "name": "status",
+                "tag": 1,
+                "value": "ok"
+              }
+            ]
+          },
+          {
+            "name": "producer",
+            "tag": 7,
+            "value": "producer.fd8e2bc0eed941b331c8fa2dda3e075b7c1789000b7e06a82f0bc97f930331b8"
+          },
+          {
+            "name": "environment",
+            "tag": 8,
+            "value": "environment.dd7dbab800d3f1a9b59daa89a8b9da4ad355f97844a5b0ceb4a38d187e705385"
+          },
+          {
+            "name": "test_command",
+            "tag": 31,
+            "value": "cargo test --lib"
+          },
+          {
+            "name": "test_ids",
+            "tag": 32,
+            "value": [
+              "decode"
+            ]
+          },
+          {
+            "name": "tool",
+            "tag": 33,
+            "value": "cargo"
+          }
+        ],
+        "family": "operation",
+        "schemever": 1
+      },
+      "description": "run_test operation",
+      "family": "operation",
+      "id": "vectors/operation-run-test.id",
+      "name": "operation-run-test",
+      "references": {
+        "environment-linux": "environment.dd7dbab800d3f1a9b59daa89a8b9da4ad355f97844a5b0ceb4a38d187e705385",
+        "producer-agent": "producer.fd8e2bc0eed941b331c8fa2dda3e075b7c1789000b7e06a82f0bc97f930331b8"
+      },
+      "schemever": 1
+    },
+    {
+      "bytes": "vectors/operation-invoke-oracle.gce.hex",
+      "constructed_from": {
+        "body": [
+          {
+            "name": "op_type",
+            "tag": 1,
+            "value": "invoke_oracle"
+          },
+          {
+            "name": "result",
+            "tag": 6,
+            "value": [
+              {
+                "name": "status",
+                "tag": 1,
+                "value": "ok"
+              }
+            ]
+          },
+          {
+            "name": "producer",
+            "tag": 7,
+            "value": "producer.fd8e2bc0eed941b331c8fa2dda3e075b7c1789000b7e06a82f0bc97f930331b8"
+          },
+          {
+            "name": "environment",
+            "tag": 8,
+            "value": "environment.dd7dbab800d3f1a9b59daa89a8b9da4ad355f97844a5b0ceb4a38d187e705385"
+          },
+          {
+            "name": "oracle",
+            "tag": 34,
+            "value": "bind-9.20"
+          },
+          {
+            "name": "oracle_version",
+            "tag": 35,
+            "value": "9.20.0"
+          },
+          {
+            "name": "query",
+            "tag": 36,
+            "value": "blob.a17102dfcad3522c3209daacccbcd33e9a61c616cf3e6b3fd46645dbbf64a5ec"
+          },
+          {
+            "name": "response",
+            "tag": 37,
+            "value": "blob.f7a7f621953ce769e068f5ca7904cc20746c3b22a7680e8236ca81f5431b22d3"
+          }
+        ],
+        "family": "operation",
+        "schemever": 1
+      },
+      "description": "invoke_oracle operation",
+      "family": "operation",
+      "id": "vectors/operation-invoke-oracle.id",
+      "name": "operation-invoke-oracle",
+      "references": {
+        "blob-binary": "blob.f7a7f621953ce769e068f5ca7904cc20746c3b22a7680e8236ca81f5431b22d3",
+        "blob-lib": "blob.a17102dfcad3522c3209daacccbcd33e9a61c616cf3e6b3fd46645dbbf64a5ec",
+        "environment-linux": "environment.dd7dbab800d3f1a9b59daa89a8b9da4ad355f97844a5b0ceb4a38d187e705385",
+        "producer-agent": "producer.fd8e2bc0eed941b331c8fa2dda3e075b7c1789000b7e06a82f0bc97f930331b8"
+      },
+      "schemever": 1
+    },
+    {
+      "bytes": "vectors/episode-basic.gce.hex",
+      "constructed_from": {
+        "body": [
+          {
+            "name": "intent",
+            "tag": 2,
+            "value": "intent.16e1cc4369d79cfe8783890d15c3f9341e3fcbbe78d0f298e9f9061933203b01"
+          },
+          {
+            "name": "input_state",
+            "tag": 3,
+            "value": "state.d5506bfe077f5f54c665950017049569b36599b86f0b668fec1076859a36254d"
+          },
+          {
+            "name": "operations",
+            "tag": 4,
+            "value": [
+              "operation.e5fdf7543802007f2dbad58a4ac25c9ca3e19a44b10147b9c2ae13a90423c24a",
+              "operation.99b78135699e11ef9c31b6cb226cb920ff5a7ce52a14bd70a1e3b3264a0a6018"
+            ]
+          },
+          {
+            "name": "output_state",
+            "tag": 5,
+            "value": "state.8eb547dadb4c823ca8c48a85d6eff37f07ba5e7c354b03c5bb391e888ddf73ef"
+          },
+          {
+            "name": "producer",
+            "tag": 6,
+            "value": "producer.e590ad412e8a4924ab814f0cbeb14d0b99019a46f73de836ed112df3aac0388e"
+          },
+          {
+            "name": "environment",
+            "tag": 8,
+            "value": "environment.dd7dbab800d3f1a9b59daa89a8b9da4ad355f97844a5b0ceb4a38d187e705385"
+          },
+          {
+            "name": "summary",
+            "tag": 9,
+            "value": "add b.txt and patch a.txt"
+          },
+          {
+            "name": "outcome",
+            "tag": 10,
+            "value": "completed"
+          },
+          {
+            "name": "started_at",
+            "tag": 11,
+            "value": "1700000000000"
+          },
+          {
+            "name": "ended_at",
+            "tag": 12,
+            "value": "1700000000000"
+          }
+        ],
+        "family": "episode",
+        "schemever": 1
+      },
+      "description": "episode over two operations",
+      "family": "episode",
+      "id": "vectors/episode-basic.id",
+      "name": "episode-basic",
+      "references": {
+        "environment-linux": "environment.dd7dbab800d3f1a9b59daa89a8b9da4ad355f97844a5b0ceb4a38d187e705385",
+        "intent-basic": "intent.16e1cc4369d79cfe8783890d15c3f9341e3fcbbe78d0f298e9f9061933203b01",
+        "operation-create-file": "operation.e5fdf7543802007f2dbad58a4ac25c9ca3e19a44b10147b9c2ae13a90423c24a",
+        "operation-write-range": "operation.99b78135699e11ef9c31b6cb226cb920ff5a7ce52a14bd70a1e3b3264a0a6018",
+        "producer-human": "producer.e590ad412e8a4924ab814f0cbeb14d0b99019a46f73de836ed112df3aac0388e",
+        "state-after": "state.8eb547dadb4c823ca8c48a85d6eff37f07ba5e7c354b03c5bb391e888ddf73ef",
+        "state-basic": "state.d5506bfe077f5f54c665950017049569b36599b86f0b668fec1076859a36254d"
+      },
+      "schemever": 1
+    },
+    {
+      "bytes": "vectors/evidence-oracle.gce.hex",
+      "constructed_from": {
+        "body": [
+          {
+            "name": "producer",
+            "tag": 1,
+            "value": "producer.fd8e2bc0eed941b331c8fa2dda3e075b7c1789000b7e06a82f0bc97f930331b8"
+          },
+          {
+            "name": "kind",
+            "tag": 2,
+            "value": "oracle_comparison"
+          },
+          {
+            "name": "subject",
+            "tag": 3,
+            "value": "parser::decode_name"
+          },
+          {
+            "name": "command",
+            "tag": 5,
+            "value": "frf court oracle bind-9.20 --corpus dns-2024"
+          },
+          {
+            "name": "input_refs",
+            "tag": 7,
+            "value": [
+              "blob.a17102dfcad3522c3209daacccbcd33e9a61c616cf3e6b3fd46645dbbf64a5ec"
+            ]
+          },
+          {
+            "name": "environment",
+            "tag": 8,
+            "value": "environment.dd7dbab800d3f1a9b59daa89a8b9da4ad355f97844a5b0ceb4a38d187e705385"
+          },
+          {
+            "name": "tools",
+            "tag": 9,
+            "value": [
+              [
+                {
+                  "name": "name",
+                  "tag": 1,
+                  "value": "frf-court"
+                },
+                {
+                  "name": "version",
+                  "tag": 2,
+                  "value": "1.2.0"
+                },
+                {
+                  "name": "digest",
+                  "tag": 3,
+                  "value": "0202020202020202020202020202020202020202020202020202020202020202"
+                }
+              ]
+            ]
+          },
+          {
+            "name": "normalizers",
+            "tag": 11,
+            "value": [
+              [
+                {
+                  "name": "name",
+                  "tag": 1,
+                  "value": "bind-normalize"
+                },
+                {
+                  "name": "digest",
+                  "tag": 2,
+                  "value": "0303030303030303030303030303030303030303030303030303030303030303"
+                }
+              ]
+            ]
+          },
+          {
+            "name": "comparators",
+            "tag": 12,
+            "value": [
+              [
+                {
+                  "name": "name",
+                  "tag": 1,
+                  "value": "byte-compare"
+                },
+                {
+                  "name": "digest",
+                  "tag": 2,
+                  "value": "0404040404040404040404040404040404040404040404040404040404040404"
+                }
+              ]
+            ]
+          },
+          {
+            "name": "result",
+            "tag": 13,
+            "value": [
+              {
+                "name": "outcome",
+                "tag": 1,
+                "value": "mismatch"
+              },
+              {
+                "name": "detail",
+                "tag": 2,
+                "value": "case 441 diverges"
+              },
+              {
+                "name": "counts",
+                "tag": 4,
+                "value": [
+                  {
+                    "name": "passed",
+                    "tag": 1,
+                    "value": "99421"
+                  },
+                  {
+                    "name": "failed",
+                    "tag": 2,
+                    "value": "1"
+                  },
+                  {
+                    "name": "skipped",
+                    "tag": 3,
+                    "value": "0"
+                  },
+                  {
+                    "name": "total",
+                    "tag": 4,
+                    "value": "99422"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "name": "output_refs",
+            "tag": 14,
+            "value": [
+              "blob.f7a7f621953ce769e068f5ca7904cc20746c3b22a7680e8236ca81f5431b22d3"
+            ]
+          },
+          {
+            "name": "reproduction",
+            "tag": 15,
+            "value": [
+              {
+                "name": "replayable",
+                "tag": 1,
+                "value": true
+              },
+              {
+                "name": "inputs_present",
+                "tag": 2,
+                "value": true
+              },
+              {
+                "name": "inputs_remote",
+                "tag": 3,
+                "value": false
+              },
+              {
+                "name": "policy_required",
+                "tag": 4,
+                "value": false
+              }
+            ]
+          },
+          {
+            "name": "created_at",
+            "tag": 16,
+            "value": "1700000000000"
+          },
+          {
+            "name": "evaluated_state",
+            "tag": 17,
+            "value": "state.8eb547dadb4c823ca8c48a85d6eff37f07ba5e7c354b03c5bb391e888ddf73ef"
+          }
+        ],
+        "family": "evidence",
+        "schemever": 1
+      },
+      "description": "oracle comparison evidence with mismatch and reproduction record",
+      "family": "evidence",
+      "id": "vectors/evidence-oracle.id",
+      "name": "evidence-oracle",
+      "references": {
+        "blob-binary": "blob.f7a7f621953ce769e068f5ca7904cc20746c3b22a7680e8236ca81f5431b22d3",
+        "blob-lib": "blob.a17102dfcad3522c3209daacccbcd33e9a61c616cf3e6b3fd46645dbbf64a5ec",
+        "environment-linux": "environment.dd7dbab800d3f1a9b59daa89a8b9da4ad355f97844a5b0ceb4a38d187e705385",
+        "producer-agent": "producer.fd8e2bc0eed941b331c8fa2dda3e075b7c1789000b7e06a82f0bc97f930331b8",
+        "state-after": "state.8eb547dadb4c823ca8c48a85d6eff37f07ba5e7c354b03c5bb391e888ddf73ef"
+      },
+      "schemever": 1
+    },
+    {
+      "bytes": "vectors/evidence-court.gce.hex",
+      "constructed_from": {
+        "body": [
+          {
+            "name": "producer",
+            "tag": 1,
+            "value": "producer.fd8e2bc0eed941b331c8fa2dda3e075b7c1789000b7e06a82f0bc97f930331b8"
+          },
+          {
+            "name": "kind",
+            "tag": 2,
+            "value": "court_receipt"
+          },
+          {
+            "name": "subject",
+            "tag": 3,
+            "value": "parser::decode_name"
+          },
+          {
+            "name": "command",
+            "tag": 5,
+            "value": "frf court run parser-decode-name --corpus dns-2024"
+          },
+          {
+            "name": "environment",
+            "tag": 8,
+            "value": "environment.dd7dbab800d3f1a9b59daa89a8b9da4ad355f97844a5b0ceb4a38d187e705385"
+          },
+          {
+            "name": "tools",
+            "tag": 9,
+            "value": [
+              [
+                {
+                  "name": "name",
+                  "tag": 1,
+                  "value": "frf-court"
+                },
+                {
+                  "name": "version",
+                  "tag": 2,
+                  "value": "1.2.0"
+                },
+                {
+                  "name": "digest",
+                  "tag": 3,
+                  "value": "0202020202020202020202020202020202020202020202020202020202020202"
+                }
+              ]
+            ]
+          },
+          {
+            "name": "result",
+            "tag": 13,
+            "value": [
+              {
+                "name": "outcome",
+                "tag": 1,
+                "value": "pass"
+              },
+              {
+                "name": "counts",
+                "tag": 4,
+                "value": [
+                  {
+                    "name": "passed",
+                    "tag": 1,
+                    "value": "99421"
+                  },
+                  {
+                    "name": "failed",
+                    "tag": 2,
+                    "value": "0"
+                  },
+                  {
+                    "name": "skipped",
+                    "tag": 3,
+                    "value": "0"
+                  },
+                  {
+                    "name": "total",
+                    "tag": 4,
+                    "value": "99421"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "name": "output_refs",
+            "tag": 14,
+            "value": [
+              "blob.f7a7f621953ce769e068f5ca7904cc20746c3b22a7680e8236ca81f5431b22d3"
+            ]
+          },
+          {
+            "name": "reproduction",
+            "tag": 15,
+            "value": [
+              {
+                "name": "replayable",
+                "tag": 1,
+                "value": true
+              },
+              {
+                "name": "inputs_present",
+                "tag": 2,
+                "value": true
+              },
+              {
+                "name": "policy_required",
+                "tag": 4,
+                "value": false
+              }
+            ]
+          },
+          {
+            "name": "created_at",
+            "tag": 16,
+            "value": "1700000000000"
+          },
+          {
+            "name": "evaluated_state",
+            "tag": 17,
+            "value": "state.8eb547dadb4c823ca8c48a85d6eff37f07ba5e7c354b03c5bb391e888ddf73ef"
+          }
+        ],
+        "family": "evidence",
+        "schemever": 1
+      },
+      "description": "FRF court receipt evidence (pass)",
+      "family": "evidence",
+      "id": "vectors/evidence-court.id",
+      "name": "evidence-court",
+      "references": {
+        "blob-binary": "blob.f7a7f621953ce769e068f5ca7904cc20746c3b22a7680e8236ca81f5431b22d3",
+        "environment-linux": "environment.dd7dbab800d3f1a9b59daa89a8b9da4ad355f97844a5b0ceb4a38d187e705385",
+        "producer-agent": "producer.fd8e2bc0eed941b331c8fa2dda3e075b7c1789000b7e06a82f0bc97f930331b8",
+        "state-after": "state.8eb547dadb4c823ca8c48a85d6eff37f07ba5e7c354b03c5bb391e888ddf73ef"
+      },
+      "schemever": 1
+    },
+    {
+      "bytes": "vectors/claim-supported.gce.hex",
+      "constructed_from": {
+        "body": [
+          {
+            "name": "subject",
+            "tag": 1,
+            "value": "parser::decode_name"
+          },
+          {
+            "name": "predicate",
+            "tag": 3,
+            "value": "parser accepts all valid RFC inputs"
+          },
+          {
+            "name": "predicate_kind",
+            "tag": 4,
+            "value": "correctness"
+          },
+          {
+            "name": "producer",
+            "tag": 7,
+            "value": "producer.fd8e2bc0eed941b331c8fa2dda3e075b7c1789000b7e06a82f0bc97f930331b8"
+          },
+          {
+            "name": "evidence",
+            "tag": 8,
+            "value": [
+              "evidence.4ec724c4462c6b4e8bdaee440eb4ecc3a4166001f34c1e872a80fb6cf9a09602"
+            ]
+          },
+          {
+            "name": "assertion",
+            "tag": 13,
+            "value": "All 99,421 corpus cases decode without error on Linux"
+          },
+          {
+            "name": "created_at",
+            "tag": 14,
+            "value": "1700000000000"
+          }
+        ],
+        "family": "claim",
+        "schemever": 1
+      },
+      "description": "claim supported by court evidence",
+      "family": "claim",
+      "id": "vectors/claim-supported.id",
+      "name": "claim-supported",
+      "references": {
+        "evidence-court": "evidence.4ec724c4462c6b4e8bdaee440eb4ecc3a4166001f34c1e872a80fb6cf9a09602",
+        "producer-agent": "producer.fd8e2bc0eed941b331c8fa2dda3e075b7c1789000b7e06a82f0bc97f930331b8"
+      },
+      "schemever": 1
+    },
+    {
+      "bytes": "vectors/claim-contradicted.gce.hex",
+      "constructed_from": {
+        "body": [
+          {
+            "name": "subject",
+            "tag": 1,
+            "value": "parser::decode_name"
+          },
+          {
+            "name": "predicate",
+            "tag": 3,
+            "value": "parser matches BIND 9.20 on all inputs"
+          },
+          {
+            "name": "predicate_kind",
+            "tag": 4,
+            "value": "compatibility"
+          },
+          {
+            "name": "producer",
+            "tag": 7,
+            "value": "producer.fd8e2bc0eed941b331c8fa2dda3e075b7c1789000b7e06a82f0bc97f930331b8"
+          },
+          {
+            "name": "evidence",
+            "tag": 8,
+            "value": [
+              "evidence.1a68f37cad98297807a3cc817ee191e351da6461c086b3ccbe4a4a41cbf92813"
+            ]
+          },
+          {
+            "name": "assertion",
+            "tag": 13,
+            "value": "FreeBSD oracle case 441 diverges"
+          },
+          {
+            "name": "created_at",
+            "tag": 14,
+            "value": "1700000000000"
+          }
+        ],
+        "family": "claim",
+        "schemever": 1
+      },
+      "description": "claim contradicted by oracle evidence",
+      "family": "claim",
+      "id": "vectors/claim-contradicted.id",
+      "name": "claim-contradicted",
+      "references": {
+        "evidence-oracle": "evidence.1a68f37cad98297807a3cc817ee191e351da6461c086b3ccbe4a4a41cbf92813",
+        "producer-agent": "producer.fd8e2bc0eed941b331c8fa2dda3e075b7c1789000b7e06a82f0bc97f930331b8"
+      },
+      "schemever": 1
+    },
+    {
+      "bytes": "vectors/residual-basic.gce.hex",
+      "constructed_from": {
+        "body": [
+          {
+            "name": "summary",
+            "tag": 2,
+            "value": "FreeBSD diverges from BIND oracle on case 441"
+          },
+          {
+            "name": "classification",
+            "tag": 3,
+            "value": "platform_divergence"
+          },
+          {
+            "name": "severity",
+            "tag": 4,
+            "value": "high"
+          },
+          {
+            "name": "scope",
+            "tag": 5,
+            "value": [
+              {
+                "name": "intent",
+                "tag": 1,
+                "value": "intent.16e1cc4369d79cfe8783890d15c3f9341e3fcbbe78d0f298e9f9061933203b01"
+              },
+              {
+                "name": "paths",
+                "tag": 3,
+                "value": [
+                  "parser::decode_name"
+                ]
+              }
+            ]
+          },
+          {
+            "name": "affected_claims",
+            "tag": 6,
+            "value": [
+              "claim.7a6d070be57a241ee353a0a33b564d95601b81df2ab1bca4210184141b0965f0"
+            ]
+          },
+          {
+            "name": "origin_evidence",
+            "tag": 8,
+            "value": "evidence.1a68f37cad98297807a3cc817ee191e351da6461c086b3ccbe4a4a41cbf92813"
+          },
+          {
+            "name": "first_observed_at",
+            "tag": 9,
+            "value": "1700000000000"
+          },
+          {
+            "name": "created_at",
+            "tag": 12,
+            "value": "1700000000000"
+          }
+        ],
+        "family": "residual",
+        "schemever": 1
+      },
+      "description": "open residual: FreeBSD platform divergence",
+      "family": "residual",
+      "id": "vectors/residual-basic.id",
+      "name": "residual-basic",
+      "references": {
+        "claim-contradicted": "claim.7a6d070be57a241ee353a0a33b564d95601b81df2ab1bca4210184141b0965f0",
+        "evidence-oracle": "evidence.1a68f37cad98297807a3cc817ee191e351da6461c086b3ccbe4a4a41cbf92813",
+        "intent-basic": "intent.16e1cc4369d79cfe8783890d15c3f9341e3fcbbe78d0f298e9f9061933203b01"
+      },
+      "schemever": 1
+    },
+    {
+      "bytes": "vectors/verification-multi-platform.gce.hex",
+      "constructed_from": {
+        "body": [
+          {
+            "name": "subject",
+            "tag": 1,
+            "value": "parser::decode_name"
+          },
+          {
+            "name": "scope",
+            "tag": 3,
+            "value": [
+              {
+                "name": "platforms",
+                "tag": 1,
+                "value": [
+                  [
+                    {
+                      "name": "os",
+                      "tag": 1,
+                      "value": "linux"
+                    },
+                    {
+                      "name": "arch",
+                      "tag": 2,
+                      "value": "x86_64"
+                    }
+                  ],
+                  [
+                    {
+                      "name": "os",
+                      "tag": 1,
+                      "value": "linux"
+                    },
+                    {
+                      "name": "arch",
+                      "tag": 2,
+                      "value": "aarch64"
+                    }
+                  ],
+                  [
+                    {
+                      "name": "os",
+                      "tag": 1,
+                      "value": "freebsd"
+                    },
+                    {
+                      "name": "arch",
+                      "tag": 2,
+                      "value": "x86_64"
+                    }
+                  ]
+                ]
+              },
+              {
+                "name": "configs",
+                "tag": 2,
+                "value": [
+                  "release"
+                ]
+              },
+              {
+                "name": "tool_versions",
+                "tag": 3,
+                "value": [
+                  [
+                    {
+                      "name": "name",
+                      "tag": 1,
+                      "value": "frf-court"
+                    },
+                    {
+                      "name": "version",
+                      "tag": 2,
+                      "value": "1.2.0"
+                    }
+                  ]
+                ]
+              }
+            ]
+          },
+          {
+            "name": "claims",
+            "tag": 4,
+            "value": [
+              "claim.4250566549688a4e7ae9e9a81ea7e8f80afcf6976df9c4a902c679bb51fdf888",
+              "claim.7a6d070be57a241ee353a0a33b564d95601b81df2ab1bca4210184141b0965f0"
+            ]
+          },
+          {
+            "name": "evidence",
+            "tag": 5,
+            "value": [
+              "evidence.4ec724c4462c6b4e8bdaee440eb4ecc3a4166001f34c1e872a80fb6cf9a09602",
+              "evidence.1a68f37cad98297807a3cc817ee191e351da6461c086b3ccbe4a4a41cbf92813"
+            ]
+          },
+          {
+            "name": "residuals",
+            "tag": 6,
+            "value": [
+              "residual.61991d031240991d9749f11d99e9e2dda9f32f48e9409d1c73d33ca95ee19471"
+            ]
+          },
+          {
+            "name": "result",
+            "tag": 7,
+            "value": "partial"
+          },
+          {
+            "name": "producer",
+            "tag": 8,
+            "value": "producer.fd8e2bc0eed941b331c8fa2dda3e075b7c1789000b7e06a82f0bc97f930331b8"
+          },
+          {
+            "name": "environment",
+            "tag": 9,
+            "value": "environment.dd7dbab800d3f1a9b59daa89a8b9da4ad355f97844a5b0ceb4a38d187e705385"
+          },
+          {
+            "name": "started_at",
+            "tag": 10,
+            "value": "1700000000000"
+          },
+          {
+            "name": "ended_at",
+            "tag": 11,
+            "value": "1700000000000"
+          }
+        ],
+        "family": "verification",
+        "schemever": 1
+      },
+      "description": "multi-platform verification run (partial)",
+      "family": "verification",
+      "id": "vectors/verification-multi-platform.id",
+      "name": "verification-multi-platform",
+      "references": {
+        "claim-contradicted": "claim.7a6d070be57a241ee353a0a33b564d95601b81df2ab1bca4210184141b0965f0",
+        "claim-supported": "claim.4250566549688a4e7ae9e9a81ea7e8f80afcf6976df9c4a902c679bb51fdf888",
+        "environment-linux": "environment.dd7dbab800d3f1a9b59daa89a8b9da4ad355f97844a5b0ceb4a38d187e705385",
+        "evidence-court": "evidence.4ec724c4462c6b4e8bdaee440eb4ecc3a4166001f34c1e872a80fb6cf9a09602",
+        "evidence-oracle": "evidence.1a68f37cad98297807a3cc817ee191e351da6461c086b3ccbe4a4a41cbf92813",
+        "producer-agent": "producer.fd8e2bc0eed941b331c8fa2dda3e075b7c1789000b7e06a82f0bc97f930331b8",
+        "residual-basic": "residual.61991d031240991d9749f11d99e9e2dda9f32f48e9409d1c73d33ca95ee19471"
+      },
+      "schemever": 1
+    },
+    {
+      "bytes": "vectors/change-simple.gce.hex",
+      "constructed_from": {
+        "body": [
+          {
+            "name": "summary",
+            "tag": 1,
+            "value": "Add b.txt"
+          },
+          {
+            "name": "intent",
+            "tag": 2,
+            "value": "intent.16e1cc4369d79cfe8783890d15c3f9341e3fcbbe78d0f298e9f9061933203b01"
+          },
+          {
+            "name": "input_state",
+            "tag": 3,
+            "value": "state.d5506bfe077f5f54c665950017049569b36599b86f0b668fec1076859a36254d"
+          },
+          {
+            "name": "operations",
+            "tag": 4,
+            "value": [
+              "operation.e5fdf7543802007f2dbad58a4ac25c9ca3e19a44b10147b9c2ae13a90423c24a"
+            ]
+          },
+          {
+            "name": "resulting_state",
+            "tag": 5,
+            "value": "state.8eb547dadb4c823ca8c48a85d6eff37f07ba5e7c354b03c5bb391e888ddf73ef"
+          },
+          {
+            "name": "producer",
+            "tag": 6,
+            "value": "producer.e590ad412e8a4924ab814f0cbeb14d0b99019a46f73de836ed112df3aac0388e"
+          },
+          {
+            "name": "environment",
+            "tag": 11,
+            "value": "environment.dd7dbab800d3f1a9b59daa89a8b9da4ad355f97844a5b0ceb4a38d187e705385"
+          },
+          {
+            "name": "created_at",
+            "tag": 21,
+            "value": "1700000000000"
+          }
+        ],
+        "family": "change",
+        "schemever": 1
+      },
+      "description": "simple change: add b.txt",
+      "family": "change",
+      "id": "vectors/change-simple.id",
+      "name": "change-simple",
+      "references": {
+        "environment-linux": "environment.dd7dbab800d3f1a9b59daa89a8b9da4ad355f97844a5b0ceb4a38d187e705385",
+        "intent-basic": "intent.16e1cc4369d79cfe8783890d15c3f9341e3fcbbe78d0f298e9f9061933203b01",
+        "operation-create-file": "operation.e5fdf7543802007f2dbad58a4ac25c9ca3e19a44b10147b9c2ae13a90423c24a",
+        "producer-human": "producer.e590ad412e8a4924ab814f0cbeb14d0b99019a46f73de836ed112df3aac0388e",
+        "state-after": "state.8eb547dadb4c823ca8c48a85d6eff37f07ba5e7c354b03c5bb391e888ddf73ef",
+        "state-basic": "state.d5506bfe077f5f54c665950017049569b36599b86f0b668fec1076859a36254d"
+      },
+      "schemever": 1
+    },
+    {
+      "bytes": "vectors/change-demo.gce.hex",
+      "constructed_from": {
+        "body": [
+          {
+            "name": "summary",
+            "tag": 1,
+            "value": "Fix parser compatibility problem"
+          },
+          {
+            "name": "intent",
+            "tag": 2,
+            "value": "intent.16e1cc4369d79cfe8783890d15c3f9341e3fcbbe78d0f298e9f9061933203b01"
+          },
+          {
+            "name": "input_state",
+            "tag": 3,
+            "value": "state.8eb547dadb4c823ca8c48a85d6eff37f07ba5e7c354b03c5bb391e888ddf73ef"
+          },
+          {
+            "name": "operations",
+            "tag": 4,
+            "value": [
+              "operation.99b78135699e11ef9c31b6cb226cb920ff5a7ce52a14bd70a1e3b3264a0a6018",
+              "operation.df7677085adf83c3d5bbe425c11fa95665377aa1dacc2f8bef73a23252184ccd"
+            ]
+          },
+          {
+            "name": "resulting_state",
+            "tag": 5,
+            "value": "state.6f8eeb01efc11ebc33dd09253b20b5e1cd2bab87b87513938fb64fd746d18f9f"
+          },
+          {
+            "name": "producer",
+            "tag": 6,
+            "value": "producer.fd8e2bc0eed941b331c8fa2dda3e075b7c1789000b7e06a82f0bc97f930331b8"
+          },
+          {
+            "name": "disclosure",
+            "tag": 9,
+            "value": "DIGEST_ONLY"
+          },
+          {
+            "name": "instruction_digest",
+            "tag": 10,
+            "value": "abababababababababababababababababababababababababababababababab"
+          },
+          {
+            "name": "environment",
+            "tag": 11,
+            "value": "environment.dd7dbab800d3f1a9b59daa89a8b9da4ad355f97844a5b0ceb4a38d187e705385"
+          },
+          {
+            "name": "claims",
+            "tag": 12,
+            "value": [
+              "claim.4250566549688a4e7ae9e9a81ea7e8f80afcf6976df9c4a902c679bb51fdf888",
+              "claim.7a6d070be57a241ee353a0a33b564d95601b81df2ab1bca4210184141b0965f0"
+            ]
+          },
+          {
+            "name": "evidence",
+            "tag": 13,
+            "value": [
+              "evidence.4ec724c4462c6b4e8bdaee440eb4ecc3a4166001f34c1e872a80fb6cf9a09602",
+              "evidence.1a68f37cad98297807a3cc817ee191e351da6461c086b3ccbe4a4a41cbf92813"
+            ]
+          },
+          {
+            "name": "residuals",
+            "tag": 14,
+            "value": [
+              "residual.61991d031240991d9749f11d99e9e2dda9f32f48e9409d1c73d33ca95ee19471"
+            ]
+          },
+          {
+            "name": "verification",
+            "tag": 15,
+            "value": [
+              "verification.c265f5ce4ca5a97a6778600530d453ed42d552baf6b7f41eb2db3e16a9fc0fbf"
+            ]
+          },
+          {
+            "name": "causal_parents",
+            "tag": 17,
+            "value": [
+              "change.af8f760ff1511d430f45be68c77d8dd7518d148a9ec62c8a988807da1e27c42f"
+            ]
+          },
+          {
+            "name": "created_at",
+            "tag": 21,
+            "value": "1700000000000"
+          }
+        ],
+        "family": "change",
+        "schemever": 1
+      },
+      "description": "acceptance-demo change with claims, evidence, residuals, verification",
+      "family": "change",
+      "id": "vectors/change-demo.id",
+      "name": "change-demo",
+      "references": {
+        "change-simple": "change.af8f760ff1511d430f45be68c77d8dd7518d148a9ec62c8a988807da1e27c42f",
+        "claim-contradicted": "claim.7a6d070be57a241ee353a0a33b564d95601b81df2ab1bca4210184141b0965f0",
+        "claim-supported": "claim.4250566549688a4e7ae9e9a81ea7e8f80afcf6976df9c4a902c679bb51fdf888",
+        "environment-linux": "environment.dd7dbab800d3f1a9b59daa89a8b9da4ad355f97844a5b0ceb4a38d187e705385",
+        "evidence-court": "evidence.4ec724c4462c6b4e8bdaee440eb4ecc3a4166001f34c1e872a80fb6cf9a09602",
+        "evidence-oracle": "evidence.1a68f37cad98297807a3cc817ee191e351da6461c086b3ccbe4a4a41cbf92813",
+        "intent-basic": "intent.16e1cc4369d79cfe8783890d15c3f9341e3fcbbe78d0f298e9f9061933203b01",
+        "operation-invoke-oracle": "operation.df7677085adf83c3d5bbe425c11fa95665377aa1dacc2f8bef73a23252184ccd",
+        "operation-write-range": "operation.99b78135699e11ef9c31b6cb226cb920ff5a7ce52a14bd70a1e3b3264a0a6018",
+        "producer-agent": "producer.fd8e2bc0eed941b331c8fa2dda3e075b7c1789000b7e06a82f0bc97f930331b8",
+        "residual-basic": "residual.61991d031240991d9749f11d99e9e2dda9f32f48e9409d1c73d33ca95ee19471",
+        "state-after": "state.8eb547dadb4c823ca8c48a85d6eff37f07ba5e7c354b03c5bb391e888ddf73ef",
+        "state-final": "state.6f8eeb01efc11ebc33dd09253b20b5e1cd2bab87b87513938fb64fd746d18f9f",
+        "verification-multi-platform": "verification.c265f5ce4ca5a97a6778600530d453ed42d552baf6b7f41eb2db3e16a9fc0fbf"
+      },
+      "schemever": 1
+    },
+    {
+      "bytes": "vectors/change-reconciled.gce.hex",
+      "constructed_from": {
+        "body": [
+          {
+            "name": "summary",
+            "tag": 1,
+            "value": "Reconcile agent direction over baseline"
+          },
+          {
+            "name": "intent",
+            "tag": 2,
+            "value": "intent.16e1cc4369d79cfe8783890d15c3f9341e3fcbbe78d0f298e9f9061933203b01"
+          },
+          {
+            "name": "input_state",
+            "tag": 3,
+            "value": "state.d5506bfe077f5f54c665950017049569b36599b86f0b668fec1076859a36254d"
+          },
+          {
+            "name": "resulting_state",
+            "tag": 5,
+            "value": "state.6f8eeb01efc11ebc33dd09253b20b5e1cd2bab87b87513938fb64fd746d18f9f"
+          },
+          {
+            "name": "producer",
+            "tag": 6,
+            "value": "producer.e590ad412e8a4924ab814f0cbeb14d0b99019a46f73de836ed112df3aac0388e"
+          },
+          {
+            "name": "disclosure",
+            "tag": 9,
+            "value": "FULL"
+          },
+          {
+            "name": "causal_parents",
+            "tag": 17,
+            "value": [
+              "change.af8f760ff1511d430f45be68c77d8dd7518d148a9ec62c8a988807da1e27c42f",
+              "change.14ec9769c540d52ee0d4a5a3f3d2fb4bb8feda9f688e2e2695b0946ca84076e9"
+            ]
+          },
+          {
+            "name": "created_at",
+            "tag": 21,
+            "value": "1700000000000"
+          }
+        ],
+        "family": "change",
+        "schemever": 1
+      },
+      "description": "multi-parent change (reconciliation result)",
+      "family": "change",
+      "id": "vectors/change-reconciled.id",
+      "name": "change-reconciled",
+      "references": {
+        "change-demo": "change.14ec9769c540d52ee0d4a5a3f3d2fb4bb8feda9f688e2e2695b0946ca84076e9",
+        "change-simple": "change.af8f760ff1511d430f45be68c77d8dd7518d148a9ec62c8a988807da1e27c42f",
+        "intent-basic": "intent.16e1cc4369d79cfe8783890d15c3f9341e3fcbbe78d0f298e9f9061933203b01",
+        "producer-human": "producer.e590ad412e8a4924ab814f0cbeb14d0b99019a46f73de836ed112df3aac0388e",
+        "state-basic": "state.d5506bfe077f5f54c665950017049569b36599b86f0b668fec1076859a36254d",
+        "state-final": "state.6f8eeb01efc11ebc33dd09253b20b5e1cd2bab87b87513938fb64fd746d18f9f"
+      },
+      "schemever": 1
+    },
+    {
+      "bytes": "vectors/trajectory-simple.gce.hex",
+      "constructed_from": {
+        "body": [
+          {
+            "name": "intent",
+            "tag": 2,
+            "value": "intent.16e1cc4369d79cfe8783890d15c3f9341e3fcbbe78d0f298e9f9061933203b01"
+          },
+          {
+            "name": "base_state",
+            "tag": 3,
+            "value": "state.d5506bfe077f5f54c665950017049569b36599b86f0b668fec1076859a36254d"
+          },
+          {
+            "name": "producer",
+            "tag": 4,
+            "value": "producer.e590ad412e8a4924ab814f0cbeb14d0b99019a46f73de836ed112df3aac0388e"
+          },
+          {
+            "name": "added_changes",
+            "tag": 6,
+            "value": [
+              "change.af8f760ff1511d430f45be68c77d8dd7518d148a9ec62c8a988807da1e27c42f"
+            ]
+          },
+          {
+            "name": "created_at",
+            "tag": 13,
+            "value": "1700000000000"
+          },
+          {
+            "name": "updated_at",
+            "tag": 14,
+            "value": "1700000000000"
+          }
+        ],
+        "family": "trajectory",
+        "schemever": 1
+      },
+      "description": "trajectory with one change",
+      "family": "trajectory",
+      "id": "vectors/trajectory-simple.id",
+      "name": "trajectory-simple",
+      "references": {
+        "change-simple": "change.af8f760ff1511d430f45be68c77d8dd7518d148a9ec62c8a988807da1e27c42f",
+        "intent-basic": "intent.16e1cc4369d79cfe8783890d15c3f9341e3fcbbe78d0f298e9f9061933203b01",
+        "producer-human": "producer.e590ad412e8a4924ab814f0cbeb14d0b99019a46f73de836ed112df3aac0388e",
+        "state-basic": "state.d5506bfe077f5f54c665950017049569b36599b86f0b668fec1076859a36254d"
+      },
+      "schemever": 1
+    },
+    {
+      "bytes": "vectors/trajectory-with-handoff.gce.hex",
+      "constructed_from": {
+        "body": [
+          {
+            "name": "previous",
+            "tag": 1,
+            "value": "trajectory.75adfe4c3d37261f356c587b8ac9132a3198c29af7509001cb6f7e715d5cac27"
+          },
+          {
+            "name": "intent",
+            "tag": 2,
+            "value": "intent.16e1cc4369d79cfe8783890d15c3f9341e3fcbbe78d0f298e9f9061933203b01"
+          },
+          {
+            "name": "base_state",
+            "tag": 3,
+            "value": "state.d5506bfe077f5f54c665950017049569b36599b86f0b668fec1076859a36254d"
+          },
+          {
+            "name": "producer",
+            "tag": 4,
+            "value": "producer.fd8e2bc0eed941b331c8fa2dda3e075b7c1789000b7e06a82f0bc97f930331b8"
+          },
+          {
+            "name": "added_changes",
+            "tag": 6,
+            "value": [
+              "change.14ec9769c540d52ee0d4a5a3f3d2fb4bb8feda9f688e2e2695b0946ca84076e9"
+            ]
+          },
+          {
+            "name": "added_episodes",
+            "tag": 7,
+            "value": [
+              "episode.7940e8dc4d6f421e0397591c36d8c34abc2d1c6a9fe8fab7708e4a34cb41f40f"
+            ]
+          },
+          {
+            "name": "added_evidence",
+            "tag": 8,
+            "value": [
+              "evidence.4ec724c4462c6b4e8bdaee440eb4ecc3a4166001f34c1e872a80fb6cf9a09602",
+              "evidence.1a68f37cad98297807a3cc817ee191e351da6461c086b3ccbe4a4a41cbf92813"
+            ]
+          },
+          {
+            "name": "added_residuals",
+            "tag": 9,
+            "value": [
+              "residual.61991d031240991d9749f11d99e9e2dda9f32f48e9409d1c73d33ca95ee19471"
+            ]
+          },
+          {
+            "name": "outcome",
+            "tag": 10,
+            "value": "interrupted"
+          },
+          {
+            "name": "termination_reason",
+            "tag": 11,
+            "value": "context limit reached"
+          },
+          {
+            "name": "handoff",
+            "tag": 12,
+            "value": [
+              {
+                "name": "summary",
+                "tag": 1,
+                "value": "parser rewrite done; FreeBSD verification missing"
+              },
+              {
+                "name": "completed",
+                "tag": 2,
+                "value": [
+                  "parser rewrite",
+                  "18 tests"
+                ]
+              },
+              {
+                "name": "remaining",
+                "tag": 3,
+                "value": [
+                  "FreeBSD verification",
+                  "benchmark investigation"
+                ]
+              },
+              {
+                "name": "open_residuals",
+                "tag": 4,
+                "value": [
+                  "residual.61991d031240991d9749f11d99e9e2dda9f32f48e9409d1c73d33ca95ee19471"
+                ]
+              },
+              {
+                "name": "important_evidence",
+                "tag": 5,
+                "value": [
+                  "evidence.4ec724c4462c6b4e8bdaee440eb4ecc3a4166001f34c1e872a80fb6cf9a09602",
+                  "evidence.1a68f37cad98297807a3cc817ee191e351da6461c086b3ccbe4a4a41cbf92813"
+                ]
+              },
+              {
+                "name": "recommended_objects",
+                "tag": 6,
+                "value": [
+                  "change.14ec9769c540d52ee0d4a5a3f3d2fb4bb8feda9f688e2e2695b0946ca84076e9",
+                  "trajectory.75adfe4c3d37261f356c587b8ac9132a3198c29af7509001cb6f7e715d5cac27"
+                ]
+              },
+              {
+                "name": "next_steps",
+                "tag": 7,
+                "value": [
+                  "run frf court on freebsd",
+                  "investigate benchmark E82"
+                ]
+              }
+            ]
+          },
+          {
+            "name": "created_at",
+            "tag": 13,
+            "value": "1700000000000"
+          },
+          {
+            "name": "updated_at",
+            "tag": 14,
+            "value": "1700000000000"
+          }
+        ],
+        "family": "trajectory",
+        "schemever": 1
+      },
+      "description": "chained trajectory with handoff and incomplete outcome",
+      "family": "trajectory",
+      "id": "vectors/trajectory-with-handoff.id",
+      "name": "trajectory-with-handoff",
+      "references": {
+        "change-demo": "change.14ec9769c540d52ee0d4a5a3f3d2fb4bb8feda9f688e2e2695b0946ca84076e9",
+        "episode-basic": "episode.7940e8dc4d6f421e0397591c36d8c34abc2d1c6a9fe8fab7708e4a34cb41f40f",
+        "evidence-court": "evidence.4ec724c4462c6b4e8bdaee440eb4ecc3a4166001f34c1e872a80fb6cf9a09602",
+        "evidence-oracle": "evidence.1a68f37cad98297807a3cc817ee191e351da6461c086b3ccbe4a4a41cbf92813",
+        "intent-basic": "intent.16e1cc4369d79cfe8783890d15c3f9341e3fcbbe78d0f298e9f9061933203b01",
+        "producer-agent": "producer.fd8e2bc0eed941b331c8fa2dda3e075b7c1789000b7e06a82f0bc97f930331b8",
+        "residual-basic": "residual.61991d031240991d9749f11d99e9e2dda9f32f48e9409d1c73d33ca95ee19471",
+        "state-basic": "state.d5506bfe077f5f54c665950017049569b36599b86f0b668fec1076859a36254d",
+        "trajectory-simple": "trajectory.75adfe4c3d37261f356c587b8ac9132a3198c29af7509001cb6f7e715d5cac27"
+      },
+      "schemever": 1
+    },
+    {
+      "bytes": "vectors/case-basic.gce.hex",
+      "constructed_from": {
+        "body": [
+          {
+            "name": "summary",
+            "tag": 2,
+            "value": "Achieve BIND-compatible compressed DNS-name behavior"
+          },
+          {
+            "name": "intent",
+            "tag": 3,
+            "value": "intent.16e1cc4369d79cfe8783890d15c3f9341e3fcbbe78d0f298e9f9061933203b01"
+          },
+          {
+            "name": "status",
+            "tag": 5,
+            "value": "active"
+          },
+          {
+            "name": "added_changes",
+            "tag": 6,
+            "value": [
+              "change.af8f760ff1511d430f45be68c77d8dd7518d148a9ec62c8a988807da1e27c42f",
+              "change.14ec9769c540d52ee0d4a5a3f3d2fb4bb8feda9f688e2e2695b0946ca84076e9",
+              "change.6ef22954d493d32c179916de0de9b8f9fa492baebf8e025d9e0811999724cb58"
+            ]
+          },
+          {
+            "name": "added_trajectories",
+            "tag": 7,
+            "value": [
+              "trajectory.75adfe4c3d37261f356c587b8ac9132a3198c29af7509001cb6f7e715d5cac27",
+              "trajectory.def4a77add261462b7f5e35a18185dffd5217f636e964776bd84ab707ef7f533"
+            ]
+          },
+          {
+            "name": "producer",
+            "tag": 9,
+            "value": "producer.e590ad412e8a4924ab814f0cbeb14d0b99019a46f73de836ed112df3aac0388e"
+          },
+          {
+            "name": "created_at",
+            "tag": 10,
+            "value": "1700000000000"
+          },
+          {
+            "name": "updated_at",
+            "tag": 11,
+            "value": "1700000000000"
+          }
+        ],
+        "family": "case",
+        "schemever": 1
+      },
+      "description": "engineering case aggregating changes and trajectories",
+      "family": "case",
+      "id": "vectors/case-basic.id",
+      "name": "case-basic",
+      "references": {
+        "change-demo": "change.14ec9769c540d52ee0d4a5a3f3d2fb4bb8feda9f688e2e2695b0946ca84076e9",
+        "change-reconciled": "change.6ef22954d493d32c179916de0de9b8f9fa492baebf8e025d9e0811999724cb58",
+        "change-simple": "change.af8f760ff1511d430f45be68c77d8dd7518d148a9ec62c8a988807da1e27c42f",
+        "intent-basic": "intent.16e1cc4369d79cfe8783890d15c3f9341e3fcbbe78d0f298e9f9061933203b01",
+        "producer-human": "producer.e590ad412e8a4924ab814f0cbeb14d0b99019a46f73de836ed112df3aac0388e",
+        "trajectory-simple": "trajectory.75adfe4c3d37261f356c587b8ac9132a3198c29af7509001cb6f7e715d5cac27",
+        "trajectory-with-handoff": "trajectory.def4a77add261462b7f5e35a18185dffd5217f636e964776bd84ab707ef7f533"
+      },
+      "schemever": 1
+    },
+    {
+      "bytes": "vectors/context-manifest-basic.gce.hex",
+      "constructed_from": {
+        "body": [
+          {
+            "name": "source_objects",
+            "tag": 1,
+            "value": [
+              "state.d5506bfe077f5f54c665950017049569b36599b86f0b668fec1076859a36254d",
+              "blob.a17102dfcad3522c3209daacccbcd33e9a61c616cf3e6b3fd46645dbbf64a5ec"
+            ]
+          },
+          {
+            "name": "documentation_objects",
+            "tag": 2,
+            "value": [
+              "blob.a17102dfcad3522c3209daacccbcd33e9a61c616cf3e6b3fd46645dbbf64a5ec"
+            ]
+          },
+          {
+            "name": "claims",
+            "tag": 3,
+            "value": [
+              "claim.4250566549688a4e7ae9e9a81ea7e8f80afcf6976df9c4a902c679bb51fdf888",
+              "claim.7a6d070be57a241ee353a0a33b564d95601b81df2ab1bca4210184141b0965f0"
+            ]
+          },
+          {
+            "name": "residuals",
+            "tag": 4,
+            "value": [
+              "residual.61991d031240991d9749f11d99e9e2dda9f32f48e9409d1c73d33ca95ee19471"
+            ]
+          },
+          {
+            "name": "previous_trajectories",
+            "tag": 5,
+            "value": [
+              "trajectory.75adfe4c3d37261f356c587b8ac9132a3198c29af7509001cb6f7e715d5cac27"
+            ]
+          },
+          {
+            "name": "tool_outputs",
+            "tag": 7,
+            "value": [
+              "blob.f7a7f621953ce769e068f5ca7904cc20746c3b22a7680e8236ca81f5431b22d3"
+            ]
+          },
+          {
+            "name": "producer",
+            "tag": 9,
+            "value": "producer.e590ad412e8a4924ab814f0cbeb14d0b99019a46f73de836ed112df3aac0388e"
+          },
+          {
+            "name": "instruction_digest",
+            "tag": 11,
+            "value": "1111111111111111111111111111111111111111111111111111111111111111"
+          },
+          {
+            "name": "created_at",
+            "tag": 12,
+            "value": "1700000000000"
+          }
+        ],
+        "family": "context-manifest",
+        "schemever": 1
+      },
+      "description": "content-addressed context manifest",
+      "family": "context-manifest",
+      "id": "vectors/context-manifest-basic.id",
+      "name": "context-manifest-basic",
+      "references": {
+        "blob-binary": "blob.f7a7f621953ce769e068f5ca7904cc20746c3b22a7680e8236ca81f5431b22d3",
+        "blob-lib": "blob.a17102dfcad3522c3209daacccbcd33e9a61c616cf3e6b3fd46645dbbf64a5ec",
+        "claim-contradicted": "claim.7a6d070be57a241ee353a0a33b564d95601b81df2ab1bca4210184141b0965f0",
+        "claim-supported": "claim.4250566549688a4e7ae9e9a81ea7e8f80afcf6976df9c4a902c679bb51fdf888",
+        "producer-human": "producer.e590ad412e8a4924ab814f0cbeb14d0b99019a46f73de836ed112df3aac0388e",
+        "residual-basic": "residual.61991d031240991d9749f11d99e9e2dda9f32f48e9409d1c73d33ca95ee19471",
+        "state-basic": "state.d5506bfe077f5f54c665950017049569b36599b86f0b668fec1076859a36254d",
+        "trajectory-simple": "trajectory.75adfe4c3d37261f356c587b8ac9132a3198c29af7509001cb6f7e715d5cac27"
+      },
+      "schemever": 1
+    },
+    {
+      "bytes": "vectors/agentrun-full.gce.hex",
+      "constructed_from": {
+        "body": [
+          {
+            "name": "producer",
+            "tag": 1,
+            "value": "producer.fd8e2bc0eed941b331c8fa2dda3e075b7c1789000b7e06a82f0bc97f930331b8"
+          },
+          {
+            "name": "model_family",
+            "tag": 2,
+            "value": "anthropic"
+          },
+          {
+            "name": "model_id",
+            "tag": 3,
+            "value": "claude-sonnet-4"
+          },
+          {
+            "name": "harness",
+            "tag": 4,
+            "value": "zed-agent"
+          },
+          {
+            "name": "permissions",
+            "tag": 5,
+            "value": [
+              "read",
+              "edit",
+              "run-test",
+              "run-frf"
+            ]
+          },
+          {
+            "name": "input_state",
+            "tag": 6,
+            "value": "state.8eb547dadb4c823ca8c48a85d6eff37f07ba5e7c354b03c5bb391e888ddf73ef"
+          },
+          {
+            "name": "intent",
+            "tag": 7,
+            "value": "intent.16e1cc4369d79cfe8783890d15c3f9341e3fcbbe78d0f298e9f9061933203b01"
+          },
+          {
+            "name": "context_manifest",
+            "tag": 8,
+            "value": "context-manifest.6c9c240d47a90fd49a18a1244dea355be41f1e978039c9ecd05ae3271537688a"
+          },
+          {
+            "name": "instruction_digest",
+            "tag": 9,
+            "value": "1111111111111111111111111111111111111111111111111111111111111111"
+          },
+          {
+            "name": "tool_identities",
+            "tag": 10,
+            "value": [
+              [
+                {
+                  "name": "name",
+                  "tag": 1,
+                  "value": "frf-court"
+                },
+                {
+                  "name": "version",
+                  "tag": 2,
+                  "value": "1.2.0"
+                },
+                {
+                  "name": "digest",
+                  "tag": 3,
+                  "value": "0202020202020202020202020202020202020202020202020202020202020202"
+                }
+              ]
+            ]
+          },
+          {
+            "name": "environment",
+            "tag": 11,
+            "value": "environment.dd7dbab800d3f1a9b59daa89a8b9da4ad355f97844a5b0ceb4a38d187e705385"
+          },
+          {
+            "name": "output_trajectory",
+            "tag": 13,
+            "value": "trajectory.def4a77add261462b7f5e35a18185dffd5217f636e964776bd84ab707ef7f533"
+          },
+          {
+            "name": "disclosure",
+            "tag": 14,
+            "value": "DIGEST_ONLY"
+          },
+          {
+            "name": "conversation_ref",
+            "tag": 15,
+            "value": "blob.f7a7f621953ce769e068f5ca7904cc20746c3b22a7680e8236ca81f5431b22d3"
+          },
+          {
+            "name": "started_at",
+            "tag": 16,
+            "value": "1700000000000"
+          },
+          {
+            "name": "ended_at",
+            "tag": 17,
+            "value": "1700000000000"
+          }
+        ],
+        "family": "agentrun",
+        "schemever": 1
+      },
+      "description": "agent execution identity with context manifest",
+      "family": "agentrun",
+      "id": "vectors/agentrun-full.id",
+      "name": "agentrun-full",
+      "references": {
+        "blob-binary": "blob.f7a7f621953ce769e068f5ca7904cc20746c3b22a7680e8236ca81f5431b22d3",
+        "context-manifest-basic": "context-manifest.6c9c240d47a90fd49a18a1244dea355be41f1e978039c9ecd05ae3271537688a",
+        "environment-linux": "environment.dd7dbab800d3f1a9b59daa89a8b9da4ad355f97844a5b0ceb4a38d187e705385",
+        "intent-basic": "intent.16e1cc4369d79cfe8783890d15c3f9341e3fcbbe78d0f298e9f9061933203b01",
+        "producer-agent": "producer.fd8e2bc0eed941b331c8fa2dda3e075b7c1789000b7e06a82f0bc97f930331b8",
+        "state-after": "state.8eb547dadb4c823ca8c48a85d6eff37f07ba5e7c354b03c5bb391e888ddf73ef",
+        "trajectory-with-handoff": "trajectory.def4a77add261462b7f5e35a18185dffd5217f636e964776bd84ab707ef7f533"
+      },
+      "schemever": 1
+    },
+    {
+      "bytes": "vectors/reconciliation-basic.gce.hex",
+      "constructed_from": {
+        "body": [
+          {
+            "name": "summary",
+            "tag": 1,
+            "value": "Adopt agent-demo direction; preserve baseline as engineering knowledge"
+          },
+          {
+            "name": "intent",
+            "tag": 2,
+            "value": "intent.16e1cc4369d79cfe8783890d15c3f9341e3fcbbe78d0f298e9f9061933203b01"
+          },
+          {
+            "name": "input_trajectories",
+            "tag": 3,
+            "value": [
+              "trajectory.75adfe4c3d37261f356c587b8ac9132a3198c29af7509001cb6f7e715d5cac27",
+              "trajectory.def4a77add261462b7f5e35a18185dffd5217f636e964776bd84ab707ef7f533"
+            ]
+          },
+          {
+            "name": "input_states",
+            "tag": 4,
+            "value": [
+              "state.d5506bfe077f5f54c665950017049569b36599b86f0b668fec1076859a36254d",
+              "state.6f8eeb01efc11ebc33dd09253b20b5e1cd2bab87b87513938fb64fd746d18f9f"
+            ]
+          },
+          {
+            "name": "adopted_changes",
+            "tag": 5,
+            "value": [
+              "change.14ec9769c540d52ee0d4a5a3f3d2fb4bb8feda9f688e2e2695b0946ca84076e9"
+            ]
+          },
+          {
+            "name": "rejected_changes",
+            "tag": 6,
+            "value": [
+              "change.af8f760ff1511d430f45be68c77d8dd7518d148a9ec62c8a988807da1e27c42f"
+            ]
+          },
+          {
+            "name": "unresolved_residuals",
+            "tag": 7,
+            "value": [
+              "residual.61991d031240991d9749f11d99e9e2dda9f32f48e9409d1c73d33ca95ee19471"
+            ]
+          },
+          {
+            "name": "semantic_interactions",
+            "tag": 9,
+            "value": [
+              [
+                {
+                  "name": "kind",
+                  "tag": 1,
+                  "value": "dependency"
+                },
+                {
+                  "name": "certainty",
+                  "tag": 2,
+                  "value": "possible"
+                },
+                {
+                  "name": "subjects",
+                  "tag": 3,
+                  "value": [
+                    "change.14ec9769c540d52ee0d4a5a3f3d2fb4bb8feda9f688e2e2695b0946ca84076e9"
+                  ]
+                },
+                {
+                  "name": "severity",
+                  "tag": 4,
+                  "value": "low"
+                },
+                {
+                  "name": "detail",
+                  "tag": 5,
+                  "value": "serialize depends on invariant changed by normalize"
+                }
+              ]
+            ]
+          },
+          {
+            "name": "claims_retained",
+            "tag": 10,
+            "value": [
+              "claim.4250566549688a4e7ae9e9a81ea7e8f80afcf6976df9c4a902c679bb51fdf888"
+            ]
+          },
+          {
+            "name": "claims_invalidated",
+            "tag": 11,
+            "value": [
+              "claim.7a6d070be57a241ee353a0a33b564d95601b81df2ab1bca4210184141b0965f0"
+            ]
+          },
+          {
+            "name": "evidence_retained",
+            "tag": 12,
+            "value": [
+              "evidence.4ec724c4462c6b4e8bdaee440eb4ecc3a4166001f34c1e872a80fb6cf9a09602",
+              "evidence.1a68f37cad98297807a3cc817ee191e351da6461c086b3ccbe4a4a41cbf92813"
+            ]
+          },
+          {
+            "name": "verification_required",
+            "tag": 13,
+            "value": [
+              "verification.c265f5ce4ca5a97a6778600530d453ed42d552baf6b7f41eb2db3e16a9fc0fbf"
+            ]
+          },
+          {
+            "name": "resulting_state",
+            "tag": 14,
+            "value": "state.6f8eeb01efc11ebc33dd09253b20b5e1cd2bab87b87513938fb64fd746d18f9f"
+          },
+          {
+            "name": "resulting_change",
+            "tag": 15,
+            "value": "change.6ef22954d493d32c179916de0de9b8f9fa492baebf8e025d9e0811999724cb58"
+          },
+          {
+            "name": "rationale",
+            "tag": 16,
+            "value": "FreeBSD divergence tracked as residual; oracle parity accepted for 9.20"
+          },
+          {
+            "name": "producer",
+            "tag": 17,
+            "value": "producer.e590ad412e8a4924ab814f0cbeb14d0b99019a46f73de836ed112df3aac0388e"
+          },
+          {
+            "name": "created_at",
+            "tag": 18,
+            "value": "1700000000000"
+          }
+        ],
+        "family": "reconciliation",
+        "schemever": 1
+      },
+      "description": "reconciliation over two trajectories",
+      "family": "reconciliation",
+      "id": "vectors/reconciliation-basic.id",
+      "name": "reconciliation-basic",
+      "references": {
+        "change-demo": "change.14ec9769c540d52ee0d4a5a3f3d2fb4bb8feda9f688e2e2695b0946ca84076e9",
+        "change-reconciled": "change.6ef22954d493d32c179916de0de9b8f9fa492baebf8e025d9e0811999724cb58",
+        "change-simple": "change.af8f760ff1511d430f45be68c77d8dd7518d148a9ec62c8a988807da1e27c42f",
+        "claim-contradicted": "claim.7a6d070be57a241ee353a0a33b564d95601b81df2ab1bca4210184141b0965f0",
+        "claim-supported": "claim.4250566549688a4e7ae9e9a81ea7e8f80afcf6976df9c4a902c679bb51fdf888",
+        "evidence-court": "evidence.4ec724c4462c6b4e8bdaee440eb4ecc3a4166001f34c1e872a80fb6cf9a09602",
+        "evidence-oracle": "evidence.1a68f37cad98297807a3cc817ee191e351da6461c086b3ccbe4a4a41cbf92813",
+        "intent-basic": "intent.16e1cc4369d79cfe8783890d15c3f9341e3fcbbe78d0f298e9f9061933203b01",
+        "producer-human": "producer.e590ad412e8a4924ab814f0cbeb14d0b99019a46f73de836ed112df3aac0388e",
+        "residual-basic": "residual.61991d031240991d9749f11d99e9e2dda9f32f48e9409d1c73d33ca95ee19471",
+        "state-basic": "state.d5506bfe077f5f54c665950017049569b36599b86f0b668fec1076859a36254d",
+        "state-final": "state.6f8eeb01efc11ebc33dd09253b20b5e1cd2bab87b87513938fb64fd746d18f9f",
+        "trajectory-simple": "trajectory.75adfe4c3d37261f356c587b8ac9132a3198c29af7509001cb6f7e715d5cac27",
+        "trajectory-with-handoff": "trajectory.def4a77add261462b7f5e35a18185dffd5217f636e964776bd84ab707ef7f533",
+        "verification-multi-platform": "verification.c265f5ce4ca5a97a6778600530d453ed42d552baf6b7f41eb2db3e16a9fc0fbf"
+      },
+      "schemever": 1
+    },
+    {
+      "bytes": "vectors/release-basic.gce.hex",
+      "constructed_from": {
+        "body": [
+          {
+            "name": "name",
+            "tag": 1,
+            "value": "gemel-0.1"
+          },
+          {
+            "name": "version",
+            "tag": 2,
+            "value": "0.1.0"
+          },
+          {
+            "name": "state",
+            "tag": 3,
+            "value": "state.6f8eeb01efc11ebc33dd09253b20b5e1cd2bab87b87513938fb64fd746d18f9f"
+          },
+          {
+            "name": "changes",
+            "tag": 4,
+            "value": [
+              "change.af8f760ff1511d430f45be68c77d8dd7518d148a9ec62c8a988807da1e27c42f",
+              "change.14ec9769c540d52ee0d4a5a3f3d2fb4bb8feda9f688e2e2695b0946ca84076e9",
+              "change.6ef22954d493d32c179916de0de9b8f9fa492baebf8e025d9e0811999724cb58"
+            ]
+          },
+          {
+            "name": "cases",
+            "tag": 5,
+            "value": [
+              "case.52a0ba76780d5d9f0802eec816dd757433d7f81bb077bb096ae54089cd0007da"
+            ]
+          },
+          {
+            "name": "claims",
+            "tag": 6,
+            "value": [
+              "claim.4250566549688a4e7ae9e9a81ea7e8f80afcf6976df9c4a902c679bb51fdf888"
+            ]
+          },
+          {
+            "name": "residuals",
+            "tag": 7,
+            "value": [
+              "residual.61991d031240991d9749f11d99e9e2dda9f32f48e9409d1c73d33ca95ee19471"
+            ]
+          },
+          {
+            "name": "verification",
+            "tag": 8,
+            "value": [
+              "verification.c265f5ce4ca5a97a6778600530d453ed42d552baf6b7f41eb2db3e16a9fc0fbf"
+            ]
+          },
+          {
+            "name": "artifacts",
+            "tag": 9,
+            "value": [
+              [
+                {
+                  "name": "name",
+                  "tag": 1,
+                  "value": "gemel"
+                },
+                {
+                  "name": "digest",
+                  "tag": 2,
+                  "value": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+                },
+                {
+                  "name": "uri",
+                  "tag": 3,
+                  "value": "oci://registry.invalid/gemel:0.1.0"
+                }
+              ]
+            ]
+          },
+          {
+            "name": "producer",
+            "tag": 10,
+            "value": "producer.e590ad412e8a4924ab814f0cbeb14d0b99019a46f73de836ed112df3aac0388e"
+          },
+          {
+            "name": "created_at",
+            "tag": 11,
+            "value": "1700000000000"
+          }
+        ],
+        "family": "release",
+        "schemever": 1
+      },
+      "description": "release derived from a case",
+      "family": "release",
+      "id": "vectors/release-basic.id",
+      "name": "release-basic",
+      "references": {
+        "case-basic": "case.52a0ba76780d5d9f0802eec816dd757433d7f81bb077bb096ae54089cd0007da",
+        "change-demo": "change.14ec9769c540d52ee0d4a5a3f3d2fb4bb8feda9f688e2e2695b0946ca84076e9",
+        "change-reconciled": "change.6ef22954d493d32c179916de0de9b8f9fa492baebf8e025d9e0811999724cb58",
+        "change-simple": "change.af8f760ff1511d430f45be68c77d8dd7518d148a9ec62c8a988807da1e27c42f",
+        "claim-supported": "claim.4250566549688a4e7ae9e9a81ea7e8f80afcf6976df9c4a902c679bb51fdf888",
+        "producer-human": "producer.e590ad412e8a4924ab814f0cbeb14d0b99019a46f73de836ed112df3aac0388e",
+        "residual-basic": "residual.61991d031240991d9749f11d99e9e2dda9f32f48e9409d1c73d33ca95ee19471",
+        "state-final": "state.6f8eeb01efc11ebc33dd09253b20b5e1cd2bab87b87513938fb64fd746d18f9f",
+        "verification-multi-platform": "verification.c265f5ce4ca5a97a6778600530d453ed42d552baf6b7f41eb2db3e16a9fc0fbf"
+      },
+      "schemever": 1
+    },
+    {
+      "bytes": "vectors/checkpoint-basic.gce.hex",
+      "constructed_from": {
+        "body": [
+          {
+            "name": "summary",
+            "tag": 2,
+            "value": "Continuation: resolve FreeBSD divergence"
+          },
+          {
+            "name": "intent",
+            "tag": 3,
+            "value": "intent.16e1cc4369d79cfe8783890d15c3f9341e3fcbbe78d0f298e9f9061933203b01"
+          },
+          {
+            "name": "trajectory",
+            "tag": 4,
+            "value": "trajectory.def4a77add261462b7f5e35a18185dffd5217f636e964776bd84ab707ef7f533"
+          },
+          {
+            "name": "state",
+            "tag": 5,
+            "value": "state.6f8eeb01efc11ebc33dd09253b20b5e1cd2bab87b87513938fb64fd746d18f9f"
+          },
+          {
+            "name": "open_claims",
+            "tag": 6,
+            "value": [
+              "claim.7a6d070be57a241ee353a0a33b564d95601b81df2ab1bca4210184141b0965f0"
+            ]
+          },
+          {
+            "name": "unresolved_residuals",
+            "tag": 7,
+            "value": [
+              "residual.61991d031240991d9749f11d99e9e2dda9f32f48e9409d1c73d33ca95ee19471"
+            ]
+          },
+          {
+            "name": "important_evidence",
+            "tag": 8,
+            "value": [
+              "evidence.4ec724c4462c6b4e8bdaee440eb4ecc3a4166001f34c1e872a80fb6cf9a09602",
+              "evidence.1a68f37cad98297807a3cc817ee191e351da6461c086b3ccbe4a4a41cbf92813"
+            ]
+          },
+          {
+            "name": "recent_decisions",
+            "tag": 9,
+            "value": [
+              "change.14ec9769c540d52ee0d4a5a3f3d2fb4bb8feda9f688e2e2695b0946ca84076e9"
+            ]
+          },
+          {
+            "name": "relevant_attempts",
+            "tag": 10,
+            "value": [
+              "trajectory.75adfe4c3d37261f356c587b8ac9132a3198c29af7509001cb6f7e715d5cac27"
+            ]
+          },
+          {
+            "name": "continuation_scope",
+            "tag": 11,
+            "value": [
+              "freebsd verification",
+              "benchmark E82"
+            ]
+          },
+          {
+            "name": "producer",
+            "tag": 12,
+            "value": "producer.fd8e2bc0eed941b331c8fa2dda3e075b7c1789000b7e06a82f0bc97f930331b8"
+          },
+          {
+            "name": "created_at",
+            "tag": 13,
+            "value": "1700000000000"
+          }
+        ],
+        "family": "checkpoint",
+        "schemever": 1
+      },
+      "description": "continuation checkpoint",
+      "family": "checkpoint",
+      "id": "vectors/checkpoint-basic.id",
+      "name": "checkpoint-basic",
+      "references": {
+        "change-demo": "change.14ec9769c540d52ee0d4a5a3f3d2fb4bb8feda9f688e2e2695b0946ca84076e9",
+        "claim-contradicted": "claim.7a6d070be57a241ee353a0a33b564d95601b81df2ab1bca4210184141b0965f0",
+        "evidence-court": "evidence.4ec724c4462c6b4e8bdaee440eb4ecc3a4166001f34c1e872a80fb6cf9a09602",
+        "evidence-oracle": "evidence.1a68f37cad98297807a3cc817ee191e351da6461c086b3ccbe4a4a41cbf92813",
+        "intent-basic": "intent.16e1cc4369d79cfe8783890d15c3f9341e3fcbbe78d0f298e9f9061933203b01",
+        "producer-agent": "producer.fd8e2bc0eed941b331c8fa2dda3e075b7c1789000b7e06a82f0bc97f930331b8",
+        "residual-basic": "residual.61991d031240991d9749f11d99e9e2dda9f32f48e9409d1c73d33ca95ee19471",
+        "state-final": "state.6f8eeb01efc11ebc33dd09253b20b5e1cd2bab87b87513938fb64fd746d18f9f",
+        "trajectory-simple": "trajectory.75adfe4c3d37261f356c587b8ac9132a3198c29af7509001cb6f7e715d5cac27",
+        "trajectory-with-handoff": "trajectory.def4a77add261462b7f5e35a18185dffd5217f636e964776bd84ab707ef7f533"
+      },
+      "schemever": 1
+    },
+    {
+      "bytes": "vectors/config-default.gce.hex",
+      "constructed_from": {
+        "body": [
+          {
+            "name": "retention",
+            "tag": 2,
+            "value": [
+              {
+                "name": "tiers",
+                "tag": 1,
+                "value": [
+                  [
+                    {
+                      "name": "tier",
+                      "tag": 1,
+                      "value": "0"
+                    },
+                    {
+                      "name": "policy",
+                      "tag": 2,
+                      "value": "retain_forever"
+                    }
+                  ],
+                  [
+                    {
+                      "name": "tier",
+                      "tag": 1,
+                      "value": "1"
+                    },
+                    {
+                      "name": "policy",
+                      "tag": 2,
+                      "value": "retain_policy"
+                    }
+                  ],
+                  [
+                    {
+                      "name": "tier",
+                      "tag": 1,
+                      "value": "2"
+                    },
+                    {
+                      "name": "policy",
+                      "tag": 2,
+                      "value": "prune_after_days"
+                    },
+                    {
+                      "name": "days",
+                      "tag": 3,
+                      "value": "90"
+                    }
+                  ],
+                  [
+                    {
+                      "name": "tier",
+                      "tag": 1,
+                      "value": "3"
+                    },
+                    {
+                      "name": "policy",
+                      "tag": 2,
+                      "value": "prune_after_days"
+                    },
+                    {
+                      "name": "days",
+                      "tag": 3,
+                      "value": "14"
+                    }
+                  ]
+                ]
+              },
+              {
+                "name": "default_unknown",
+                "tag": 2,
+                "value": "retain"
+              }
+            ]
+          },
+          {
+            "name": "gc",
+            "tag": 3,
+            "value": [
+              {
+                "name": "enabled",
+                "tag": 1,
+                "value": true
+              },
+              {
+                "name": "interval_days",
+                "tag": 2,
+                "value": "7"
+              }
+            ]
+          },
+          {
+            "name": "execution_policy",
+            "tag": 4,
+            "value": "never_auto_execute"
+          },
+          {
+            "name": "disclosure_default",
+            "tag": 5,
+            "value": "DIGEST_ONLY"
+          },
+          {
+            "name": "limits",
+            "tag": 6,
+            "value": [
+              {
+                "name": "max_object_bytes",
+                "tag": 1,
+                "value": "1073741824"
+              },
+              {
+                "name": "max_record_depth",
+                "tag": 2,
+                "value": "64"
+              },
+              {
+                "name": "max_array_elements",
+                "tag": 3,
+                "value": "1000000"
+              },
+              {
+                "name": "max_refs_per_object",
+                "tag": 4,
+                "value": "100000"
+              },
+              {
+                "name": "max_string_bytes",
+                "tag": 5,
+                "value": "16777216"
+              }
+            ]
+          },
+          {
+            "name": "created_at",
+            "tag": 7,
+            "value": "1700000000000"
+          }
+        ],
+        "family": "config",
+        "schemever": 1
+      },
+      "description": "default repository configuration",
+      "family": "config",
+      "id": "vectors/config-default.id",
+      "name": "config-default",
+      "references": {},
+      "schemever": 1
+    },
+    {
+      "bytes": "vectors/mapping-git-commit.gce.hex",
+      "constructed_from": {
+        "body": [
+          {
+            "name": "kind",
+            "tag": 1,
+            "value": "git_commit"
+          },
+          {
+            "name": "from",
+            "tag": 2,
+            "value": "9f3a1c2b4d5e6f708192a3b4c5d6e7f8091a2b3c"
+          },
+          {
+            "name": "to",
+            "tag": 3,
+            "value": "change.af8f760ff1511d430f45be68c77d8dd7518d148a9ec62c8a988807da1e27c42f"
+          },
+          {
+            "name": "loss",
+            "tag": 4,
+            "value": [
+              {
+                "name": "known_loss",
+                "tag": 1,
+                "value": [
+                  "timestamp substituted"
+                ]
+              },
+              {
+                "name": "fabricated",
+                "tag": 3,
+                "value": []
+              }
+            ]
+          },
+          {
+            "name": "producer",
+            "tag": 5,
+            "value": "producer.5a69ebc6719727ed8cdade114b177151a9f61361adfecd8508fdf614d98529f2"
+          },
+          {
+            "name": "created_at",
+            "tag": 6,
+            "value": "1700000000000"
+          }
+        ],
+        "family": "mapping",
+        "schemever": 1
+      },
+      "description": "git commit mapping with documented loss",
+      "family": "mapping",
+      "id": "vectors/mapping-git-commit.id",
+      "name": "mapping-git-commit",
+      "references": {
+        "change-simple": "change.af8f760ff1511d430f45be68c77d8dd7518d148a9ec62c8a988807da1e27c42f",
+        "producer-git-import": "producer.5a69ebc6719727ed8cdade114b177151a9f61361adfecd8508fdf614d98529f2"
+      },
+      "schemever": 1
+    },
+    {
+      "bytes": "vectors/extension-change.gce.hex",
+      "constructed_from": {
+        "body": [
+          {
+            "name": "summary",
+            "tag": 1,
+            "value": "Extension retention probe"
+          },
+          {
+            "name": "producer",
+            "tag": 6,
+            "value": "producer.e590ad412e8a4924ab814f0cbeb14d0b99019a46f73de836ed112df3aac0388e"
+          },
+          {
+            "tag": 128,
+            "value": "03686921"
+          }
+        ],
+        "family": "change",
+        "schemever": 1
+      },
+      "description": "change with an extension field (lossless retention)",
+      "family": "change",
+      "id": "vectors/extension-change.id",
+      "name": "extension-change",
+      "references": {
+        "producer-human": "producer.e590ad412e8a4924ab814f0cbeb14d0b99019a46f73de836ed112df3aac0388e"
+      },
+      "schemever": 1
+    }
+  ]
+}
