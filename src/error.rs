@@ -1,9 +1,9 @@
 //! Canonical object errors (fail-closed catalog, THREAT_MODEL.md §4).
 
-use gemel_core::family::Family;
-use gemel_core::gid::ParseGidError;
-use gemel_core::hex::HexError;
-use gemel_core::varint::VarintError;
+use crate::family::Family;
+use crate::gid::ParseGidError;
+use crate::hex::HexError;
+use crate::varint::VarintError;
 use std::fmt;
 
 /// Every failure mode of the canonical layer.

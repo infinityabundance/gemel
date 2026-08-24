@@ -4,7 +4,7 @@
 //! encoder, decoder, and validator are driven exclusively by these tables;
 //! the golden fixtures pin their bytes. Any change here is a protocol change.
 
-use gemel_core::family::Family;
+use crate::family::Family;
 
 /// The schema type of a field value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

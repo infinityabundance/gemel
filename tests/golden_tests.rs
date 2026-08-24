@@ -5,20 +5,20 @@
 //! metadata, verify cross-references resolve, and verify the rebuilt fixture
 //! reproduces the pinned bytes exactly.
 
-use gemel_core::hex;
-use gemel_core::limits::Limits;
-use gemel_object::decode::decode_object;
-use gemel_object::encode::encode_object;
-use gemel_object::golden::build_all;
-use gemel_object::hash::object_id_bytes;
-use gemel_object::value::Value;
+use gemel::hex;
+use gemel::limits::Limits;
+use gemel::decode::decode_object;
+use gemel::encode::encode_object;
+use gemel::golden::build_all;
+use gemel::hash::object_id_bytes;
+use gemel::value::Value;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 fn golden_dir() -> PathBuf {
     match std::env::var("GEMEL_GOLDEN_DIR") {
         Ok(p) => PathBuf::from(p),
-        Err(_) => PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../golden"),
+        Err(_) => PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("golden"),
     }
 }
 
@@ -66,7 +66,7 @@ fn every_vector_roundtrips_pins_identity_and_rebuilds() {
     assert!(!vectors.is_empty());
 
     let built = build_all(&Limits::default()).expect("fixtures build");
-    let by_name: HashMap<&str, &gemel_object::golden::BuiltFixture> =
+    let by_name: HashMap<&str, &gemel::golden::BuiltFixture> =
         built.iter().map(|b| (b.fixture.name, b)).collect();
 
     let mut families = std::collections::HashSet::new();
@@ -106,8 +106,8 @@ fn every_vector_roundtrips_pins_identity_and_rebuilds() {
         // 6. Cross-references resolve to pinned identities.
         let mut gids = Vec::new();
         match &obj.body {
-            gemel_object::value::Body::Blob(_) => {}
-            gemel_object::value::Body::Fields(fields) => {
+            gemel::value::Body::Blob(_) => {}
+            gemel::value::Body::Fields(fields) => {
                 for f in fields {
                     collect_gids(&f.value, &mut gids);
                 }
@@ -127,7 +127,7 @@ fn every_vector_roundtrips_pins_identity_and_rebuilds() {
 
     // 7. Every family is covered.
     assert_eq!(families.len(), 22, "all 22 families must be represented");
-    for family in gemel_core::family::Family::ALL {
+    for family in gemel::family::Family::ALL {
         assert!(families.contains(&family), "missing vector for {family}");
     }
 }

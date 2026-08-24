@@ -8,7 +8,7 @@ complete family catalog (all twenty-two families, every field), graph semantics,
 derived-status algorithms, object lifetime, compatibility rules, limits, and the golden
 fixture specification.
 
-The implementation (`crates/gemel-core`, `crates/gemel-object`) is a reference
+The implementation (the `gemel` crate, `src/`) is a reference
 implementation. Where implementation and this document disagree, this document is
 authoritative and the disagreement is a defect.
 
@@ -1147,7 +1147,7 @@ golden/
 ```json
 {
   "schema": "gemel.golden.v1",
-  "generator": "gemel-object golden-gen",
+  "generator": "gemel golden-gen",
   "generated_at": "<unix seconds; informative metadata only; never affects vector bytes>",
   "encver": 1,
   "vectors": [
@@ -1179,7 +1179,7 @@ extension field with lossless retention. Cross-references between vectors are re
 
 ### 11.4 Executable verification
 
-`crates/gemel-object` implements:
+The `gemel` crate (`src/`, binary `golden-gen`) implements:
 
 - encode(decode(bytes)) == bytes for every vector (byte-exact, including extension
   retention);

@@ -3,8 +3,8 @@
 use crate::error::ObjectError;
 use crate::spec::{op_kind_tags, schema_for};
 use crate::value::{Body, Field, Object, Value};
-use gemel_core::family::Family;
-use gemel_core::limits::Limits;
+use crate::family::Family;
+use crate::limits::Limits;
 
 /// Tree modes (OBJECT_MODEL.md §6.2).
 pub const MODE_FILE: u64 = 0o100644;

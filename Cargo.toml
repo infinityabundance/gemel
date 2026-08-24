@@ -1,16 +1,19 @@
-[workspace]
-resolver = "2"
-members = [
-    "crates/gemel-core",
-    "crates/gemel-object",
-]
-
-[workspace.package]
+[package]
+name = "gemel"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.75"
+rust-version = "1.85"
+description = "Evidence-native version control for agentic software development: canonical object encoding, content-addressed identity, and executable golden fixtures."
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/infinityabundance/gemel"
+readme = "README.md"
+keywords = ["version-control", "vcs", "content-addressed", "agentic", "provenance", "immutable"]
+categories = ["development-tools::version-control"]
 
-[workspace.dependencies]
-gemel-core = { path = "crates/gemel-core" }
+[dependencies]
 blake3 = "1.5"
 serde_json = "1.0"
+
+[[bin]]
+name = "golden-gen"
+path = "src/bin/golden_gen.rs"

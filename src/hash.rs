@@ -4,7 +4,7 @@
 
 use crate::error::ObjectError;
 use crate::value::Object;
-use gemel_core::gid::Gid;
+use crate::gid::Gid;
 
 /// The BLAKE3-256 identity digest of canonical envelope bytes.
 pub fn object_id_bytes(bytes: &[u8]) -> [u8; 32] {
@@ -13,12 +13,12 @@ pub fn object_id_bytes(bytes: &[u8]) -> [u8; 32] {
 
 /// Derives the identity of an encoded object (family from the envelope).
 pub fn gid_from_envelope(bytes: &[u8]) -> Option<Gid> {
-    let family = gemel_core::family::Family::from_code(*bytes.get(5)?)?;
+    let family = crate::family::Family::from_code(*bytes.get(5)?)?;
     Some(Gid::new(family, object_id_bytes(bytes)))
 }
 
 /// Derives the identity of an object (encodes it first).
-pub fn object_id(obj: &Object, limits: &gemel_core::limits::Limits) -> Result<Gid, ObjectError> {
+pub fn object_id(obj: &Object, limits: &crate::limits::Limits) -> Result<Gid, ObjectError> {
     let bytes = crate::encode::encode_object(obj, limits)?;
     Ok(Gid::new(obj.family, object_id_bytes(&bytes)))
 }

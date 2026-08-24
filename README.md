@@ -28,7 +28,7 @@ deterministically encoded object model implemented in native Rust.
 - Seven normative documents (`docs/`): SPECIFICATION, OBJECT_MODEL, STORAGE,
   INVARIANTS, GIT_INTEROP, AGENT_PROTOCOL, THREAT_MODEL.
 - Canonical encoding (GCE): deterministic, fail-closed, extension-preserving binary
-  grammar (`crates/gemel-object`).
+  grammar (the `gemel` crate, `src/`).
 - BLAKE3-256 object identity; twenty-two object families specified field-by-field.
 - Executable golden fixtures (`golden/`) pinning canonical bytes and identities, with a
   regeneration policy.
@@ -46,23 +46,27 @@ Next: **Phase 1 — Minimal Useful Gemel** (`init`, `status`, `snapshot`, `chang
 6. `docs/AGENT_PROTOCOL.md` — the machine query surface.
 7. `docs/THREAT_MODEL.md` — security model and fail-closed catalog.
 
-## Workspace layout
+## Layout
 
 ```text
-crates/
-├── gemel-core/      canonical primitives (varint, family table, Gid, limits)
-└── gemel-object/    canonical encoding, schema tables, hashing, golden fixtures
-golden/              executable golden vectors (canonical bytes + identities)
-docs/                the normative specification set
+src/                    the `gemel` crate
+├── lib.rs              crate root
+├── family|gid|…        canonical primitives (varint, family table, Gid, hex, limits)
+├── spec|encode|…       canonical encoding, schema tables, hashing, validation
+├── golden/             executable golden fixture definitions
+└── bin/golden-gen.rs   golden vector generator
+golden/                 pinned golden vectors (canonical bytes + identities)
+docs/                   the normative specification set
 ```
 
-Dependency direction is disciplined: `object → core`; nothing depends upward.
+Layering is disciplined within the crate: primitives → encoding → schema → fixtures;
+nothing depends upward.
 
 ## Validation
 
 ```sh
-cargo test --workspace        # encoding determinism, fail-closed catalog, golden vectors
-cargo run -p gemel-object --bin golden-gen   # regenerate vectors (protocol-change only)
+cargo test               # encoding determinism, fail-closed catalog, golden vectors
+cargo run --bin golden-gen   # regenerate vectors (protocol-change only)
 ```
 
 Golden vectors must never be regenerated casually: any change to a pinned digest is a

@@ -101,7 +101,7 @@ No decoder path: guesses, repairs, skips mandatory structure, executes, or alloc
 before bounds checks.
 
 The complete error vocabulary of the Phase 0 reference implementation
-(`crates/gemel-object/src/error.rs`) is:
+(`src/error.rs`) is:
 
 `BadMagic`, `UnknownEncodingVersion`, `UnknownFamily`, `UnknownSchemaVersion`,
 `ReservedFlags`, `LengthMismatch`, `TrailingBytes`, `NonCanonicalInteger`,

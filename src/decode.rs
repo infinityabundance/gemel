@@ -8,10 +8,10 @@ use crate::error::ObjectError;
 use crate::spec::{schema_for, FamilySchema, Type};
 use crate::validate::{is_valid_canonical_path, validate_family};
 use crate::value::{Body, Field, Object, Value};
-use gemel_core::family::Family;
-use gemel_core::gid::Gid;
-use gemel_core::limits::Limits;
-use gemel_core::varint::{decode_i64, decode_u64};
+use crate::family::Family;
+use crate::gid::Gid;
+use crate::limits::Limits;
+use crate::varint::{decode_i64, decode_u64};
 use std::str;
 
 /// Decodes a canonical envelope into an object.

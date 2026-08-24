@@ -8,9 +8,9 @@ use crate::error::ObjectError;
 use crate::spec::{schema_for, FamilySchema, Type};
 use crate::validate::{is_valid_canonical_path, validate_family};
 use crate::value::{Body, Field, Object, Value};
-use gemel_core::family::Family;
-use gemel_core::limits::Limits;
-use gemel_core::varint::{encode_i64, encode_u64};
+use crate::family::Family;
+use crate::limits::Limits;
+use crate::varint::{encode_i64, encode_u64};
 
 /// Encodes an object into its canonical envelope bytes.
 pub fn encode_object(obj: &Object, limits: &Limits) -> Result<Vec<u8>, ObjectError> {
@@ -229,7 +229,7 @@ fn encode_value(
     Ok(())
 }
 
-fn encode_gid(g: &gemel_core::gid::Gid, out: &mut Vec<u8>) {
+fn encode_gid(g: &crate::gid::Gid, out: &mut Vec<u8>) {
     let bytes = g.to_bytes();
     encode_u64(bytes.len() as u64, out);
     out.extend_from_slice(&bytes);

@@ -9,7 +9,7 @@
 use crate::error::ObjectError;
 use crate::spec::{schema_for, FamilySchema, Type};
 use crate::value::{Body, Field, Object, Value};
-use gemel_core::hex;
+use crate::hex;
 use serde_json::{json, Value as Json};
 
 /// The canonical JSON projection of an object.
@@ -59,7 +59,7 @@ pub fn value_to_json(value: &Value, ty: Option<Type>) -> Json {
                 _ => None,
             };
             let nested = FamilySchema {
-                family: gemel_core::family::Family::Change, // names only; family unused here
+                family: crate::family::Family::Change, // names only; family unused here
                 schemever: 1,
                 extensions_allowed: true,
                 fields: inner.unwrap_or(&[]),
@@ -87,8 +87,8 @@ pub fn value_to_json(value: &Value, ty: Option<Type>) -> Json {
 mod tests {
     use super::*;
     use crate::value::Field;
-    use gemel_core::family::Family;
-    use gemel_core::gid::Gid;
+    use crate::family::Family;
+    use crate::gid::Gid;
 
     #[test]
     fn projection_shape() {

@@ -9,9 +9,9 @@ use crate::encode::encode_object;
 use crate::error::ObjectError;
 use crate::hash::object_id_bytes;
 use crate::value::{Field, Object, Value};
-use gemel_core::family::Family;
-use gemel_core::gid::Gid;
-use gemel_core::limits::Limits;
+use crate::family::Family;
+use crate::gid::Gid;
+use crate::limits::Limits;
 use std::collections::HashMap;
 
 /// A fixture definition.

@@ -1,7 +1,7 @@
 //! The canonical value and object model (OBJECT_MODEL.md §1, §6).
 
-use gemel_core::family::Family;
-use gemel_core::gid::Gid;
+use crate::family::Family;
+use crate::gid::Gid;
 
 /// A canonical value.
 ///

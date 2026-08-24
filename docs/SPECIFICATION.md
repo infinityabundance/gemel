@@ -169,9 +169,10 @@ cli
 ```
 
 No dependency cycles. No god crates. Crates are created only where the boundary earns
-them (§40 of the brief). Phase 0 ships exactly two crates: `gemel-core` (canonical
-primitives: varint, family table, Gid, limits) and `gemel-object` (canonical encoding,
-schema tables, all 22 object families, hashing, golden fixtures).
+them (§40 of the brief). Phase 0 ships a single crate, `gemel`, with disciplined
+internal layering: canonical primitives (varint, family table, Gid, hex, limits) →
+canonical encoding and schema tables (all 22 object families) → validation and
+hashing → golden fixtures. The published crate name on crates.io is `gemel`.
 
 ---
 
@@ -326,7 +327,7 @@ Deliverables:
 - `docs/GIT_INTEROP.md`
 - `docs/AGENT_PROTOCOL.md`
 - `docs/THREAT_MODEL.md`
-- `crates/gemel-core`, `crates/gemel-object`: canonical encoding, schema tables,
+- the `gemel` crate: canonical encoding, schema tables,
   fail-closed decoder with lossless extension retention, BLAKE3 identity
 - `golden/`: executable golden vectors pinning canonical bytes and identities
 - Negative fixtures proving fail-closed behavior
@@ -403,7 +404,7 @@ part of the Phase 0 exit criteria.
 | Object lifetime | OBJECT_MODEL.md §9 |
 | Retention | STORAGE.md §7 |
 | Compatibility rules | OBJECT_MODEL.md §10; GIT_INTEROP.md |
-| Golden fixtures (executable) | OBJECT_MODEL.md §12; `golden/` directory; `gemel-object` tests |
+| Golden fixtures (executable) | OBJECT_MODEL.md §12; `golden/` directory; `gemel` tests |
 
 Additional cross-cutting requirements honored in Phase 0:
 
@@ -509,7 +510,7 @@ engineering memory — these are the measurable success criteria.
 7. `docs/THREAT_MODEL.md` — adversarial analysis and limits.
 
 Golden fixtures in `golden/` are the executable binding between specification and
-implementation; `crates/gemel-object` is the reference encoder/decoder.
+implementation; the `gemel` crate (`src/`) is the reference encoder/decoder.
 
 ---
 

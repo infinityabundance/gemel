@@ -5,11 +5,11 @@
 //! unless `--force` is passed: golden vectors are regenerated only as part of
 //! a deliberate protocol change.
 
-use gemel_core::hex;
-use gemel_core::limits::Limits;
-use gemel_object::encode::encode_object;
-use gemel_object::golden::build_all;
-use gemel_object::json::object_to_json;
+use gemel::encode::encode_object;
+use gemel::golden::build_all;
+use gemel::hex;
+use gemel::json::object_to_json;
+use gemel::limits::Limits;
 use serde_json::json;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -22,7 +22,7 @@ fn main() {
         .position(|a| a == "--dir")
         .and_then(|i| args.get(i + 1))
         .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../golden"));
+        .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("golden"));
     let vectors_dir = dir.join("vectors");
 
     let built = match build_all(&Limits::default()) {
@@ -92,7 +92,7 @@ fn main() {
 
     let manifest = json!({
         "schema": "gemel.golden.v1",
-        "generator": "gemel-object golden-gen",
+        "generator": "gemel golden-gen",
         "generated_at": SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs(),
         "encver": 1,
         "vectors": entries.iter().map(|e| {

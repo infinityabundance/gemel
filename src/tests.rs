@@ -7,10 +7,10 @@ use crate::error::ObjectError;
 use crate::golden::build_all;
 use crate::spec::{FamilySchema, FieldSpec, Type};
 use crate::value::{Body, Field, Object, Value};
-use gemel_core::family::Family;
-use gemel_core::gid::Gid;
-use gemel_core::limits::Limits;
-use gemel_core::varint::encode_u64;
+use crate::family::Family;
+use crate::gid::Gid;
+use crate::limits::Limits;
+use crate::varint::encode_u64;
 
 const LIMITS: Limits = Limits {
     max_object_bytes: 1 << 30,
@@ -435,7 +435,7 @@ fn depth_bomb() {
         v = recb(&[fld(0x01, &v)]);
     }
     let mut p = 0;
-    let bodylen = gemel_core::varint::decode_u64(&v, &mut p).unwrap() as usize;
+    let bodylen = crate::varint::decode_u64(&v, &mut p).unwrap() as usize;
     assert_eq!(bodylen, v.len() - p);
     let body = &v[p..];
     match crate::decode::decode_record_fields(&schema, body, &mut 0, body.len(), 1, &LIMITS) {
@@ -448,7 +448,7 @@ fn depth_bomb() {
         v = recb(&[fld(0x01, &v)]);
     }
     let mut p = 0;
-    gemel_core::varint::decode_u64(&v, &mut p).unwrap();
+    crate::varint::decode_u64(&v, &mut p).unwrap();
     let body = &v[p..];
     match crate::decode::decode_record_fields(&schema, body, &mut 0, body.len(), 1, &LIMITS) {
         Err(ObjectError::LimitExceeded { kind, .. }) => assert_eq!(kind, "record depth"),
