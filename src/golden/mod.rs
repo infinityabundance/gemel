@@ -7,11 +7,11 @@
 
 use crate::encode::encode_object;
 use crate::error::ObjectError;
-use crate::hash::object_id_bytes;
-use crate::value::{Field, Object, Value};
 use crate::family::Family;
 use crate::gid::Gid;
+use crate::hash::object_id_bytes;
 use crate::limits::Limits;
+use crate::value::{Field, Object, Value};
 use std::collections::HashMap;
 
 /// A fixture definition.

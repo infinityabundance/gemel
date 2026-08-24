@@ -5,12 +5,12 @@
 //! metadata, verify cross-references resolve, and verify the rebuilt fixture
 //! reproduces the pinned bytes exactly.
 
-use gemel::hex;
-use gemel::limits::Limits;
 use gemel::decode::decode_object;
 use gemel::encode::encode_object;
 use gemel::golden::build_all;
 use gemel::hash::object_id_bytes;
+use gemel::hex;
+use gemel::limits::Limits;
 use gemel::value::Value;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};

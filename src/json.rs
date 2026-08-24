@@ -7,9 +7,9 @@
 //! emitted for absent optional fields.
 
 use crate::error::ObjectError;
+use crate::hex;
 use crate::spec::{schema_for, FamilySchema, Type};
 use crate::value::{Body, Field, Object, Value};
-use crate::hex;
 use serde_json::{json, Value as Json};
 
 /// The canonical JSON projection of an object.
@@ -86,9 +86,9 @@ pub fn value_to_json(value: &Value, ty: Option<Type>) -> Json {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::value::Field;
     use crate::family::Family;
     use crate::gid::Gid;
+    use crate::value::Field;
 
     #[test]
     fn projection_shape() {

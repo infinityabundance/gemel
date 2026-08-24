@@ -1,13 +1,14 @@
 # Gemel — Specification (Master Document)
 
-Status: **Phase 0 — Approved specification baseline.**
-Document version: 1.0.0 (schema version `encver=1`, all object families `schemever=1`).
+Status: **Phase 1 — Minimal Useful Gemel — complete.** Next phase: Phase 2 (Agent-Native
+Value).
+Document version: 1.1.0 (schema version `encver=1`, all object families `schemever=1`).
 Audience: implementers, protocol engineers, agent authors, maintainers.
 
 This document is the normative entry point for the Gemel project. It states what Gemel
 is, the principles that govern every design decision, the architecture at a glance, the
-phased delivery plan, and — critically — the **Phase 0 conformance matrix** that binds
-every requirement of this phase to its defining document and section.
+phased delivery plan, and — critically — the **conformance matrices** that bind every
+requirement of each completed phase to its defining document and section.
 
 Normative detail lives in the companion documents:
 
@@ -52,7 +53,7 @@ content-addressed identity, fail-closed behavior, bounded complexity, strong for
 properties, excellent performance, and an architecture capable of surviving decades of
 evolution.
 
-### 1.1 Non-goals (Phase 0)
+### 1.1 Non-goals (Phases 0–1)
 
 - No distributed synchronization (Phase 6).
 - No Git wire-protocol compatibility (Phase 4/6; Git *interchange* is designed now).
@@ -312,12 +313,12 @@ reproduction metadata; execution is always policy-gated (default: never auto-exe
 Each phase has explicit entry and exit criteria. Phases deliver in order; no phase may
 be skipped.
 
-### Phase 0 — Specification Before Features (this phase)
+### Phase 0 — Specification Before Features (complete)
 
 **Entry:** none. **Exit:** the seven normative documents; the canonical object grammar,
 hashing, identity, and all family semantics defined; compatibility rules defined;
 executable golden fixtures for object encoding committed and passing; this document's
-conformance matrix (§13) satisfied.
+conformance matrix (§11) satisfied.
 
 Deliverables:
 - `docs/SPECIFICATION.md` (this file)
@@ -335,15 +336,17 @@ Deliverables:
 Explicitly *not* in Phase 0: object store, refs, CLI, workspace materialization, git
 import/export implementation, query server, distributed sync.
 
-### Phase 1 — Minimal Useful Gemel
+### Phase 1 — Minimal Useful Gemel (complete)
 
 **Entry:** Phase 0 complete. **Exit:** `gemel init`, `status`, `snapshot`, `change
-begin`, `change finish`, `log`, `show`, `diff`, `fsck` operate on a local store;
-the demonstration `State S0 → Intent I1 → Trajectory T1 → Change C1 → State S1` works
-with exact content-addressed reconstruction.
+begin`, `change finish`, `log`, `show`, `diff`, `checkout`, `fsck` operate on a local
+store; the demonstration `State S0 → Intent I1 → Trajectory T1 → Change C1 → State S1`
+works with exact content-addressed reconstruction.
 
 Support: immutable object store, state snapshots, Intent, Change, basic Producer, basic
 Claim, basic Evidence, basic Residual, Trajectory, resulting State. No distributed sync.
+
+Phase 1 exit verified by the §11.5 conformance matrix and the §17 exit statement.
 
 ### Phase 2 — Agent-Native Value
 
@@ -418,6 +421,41 @@ Additional cross-cutting requirements honored in Phase 0:
 | No compression in canonical identity | OBJECT_MODEL.md §1.9; STORAGE.md §7.5 |
 | Derived statuses over mutable truth | OBJECT_MODEL.md §8 |
 | Security model | THREAT_MODEL.md |
+
+### 11.5 Phase 1 Conformance Matrix
+
+Every §42 requirement of the brief, bound to its implementation. This matrix is part of
+the Phase 1 exit criteria and is verified by the integration suite
+(`tests/phase1_tests.rs`) and the CLI (`src/bin/gemel.rs`).
+
+| Brief requirement (Phase 1) | Implementation |
+|---|---|
+| `gemel init` | `Repo::init` (`src/store/mod.rs`); `gemel init` (`src/bin/gemel.rs`) |
+| `gemel status` | `query::status` (`src/query.rs`) |
+| `gemel snapshot` | `content::build_state` (`src/content.rs`) |
+| `gemel change begin` | `workflow::begin_change` (`src/workflow.rs`) |
+| `gemel change finish` | `workflow::finish_change` (`src/workflow.rs`) |
+| `gemel log` | `query::log` (`src/query.rs`) |
+| `gemel show` | `query::show` (`src/query.rs`) |
+| `gemel diff` | `content::diff_states`, `content::myers_diff` (`src/content.rs`) |
+| `gemel checkout` | `content::materialize` (`src/content.rs`) |
+| `gemel fsck` | `store::fsck` (`src/store/fsck.rs`) |
+| Immutable object store | `store::objects` — temp→verify→rename, sharded, hash-verified reads |
+| Ref namespace + journal | `store::refs` — journaled atomic transactions, rollback recovery |
+| Crash safety / atomicity | write-temp-verify-rename; journal commit marker; `fsck` recovery |
+| Disposable derived index | `store::index` — SQLite, schema versioned, rebuildable, drift-detected |
+| State snapshots | `content::build_state`; exact reconstruction via `materialize` |
+| Intent | `workflow::begin_change` (intent creation + name `I<n>`) |
+| Change | `workflow::finish_change` (operations, resulting state, causal parents) |
+| Basic Producer | `defaults::*_producer_object` (`src/defaults.rs`) |
+| Basic Claim / Evidence / Residual | `workflow::finish_change` options; derived status in `query` |
+| Trajectory | `workflow::finish_change` — continuation by intent, chaining, names `T<n>` |
+| Resulting State | content-addressed; reconstructed byte-exact (demo test) |
+| Working tree ↔ state | `build_state` / `materialize` / `working_tree_delta` |
+| Deterministic textual diff | `myers_diff` — O(ND) trace + linear-space divide-and-conquer |
+| .gitignore subset | `ignore` (`src/ignore.rs`); root `.gitignore` is config, never content |
+| Retention tiers / tombstones | `store::retention`, `store::tombstone` (GC pass is Phase 2+) |
+| JSON output `gemel.query.v1` | `print_json` envelope (`src/bin/gemel.rs`) |
 
 ---
 
@@ -518,7 +556,24 @@ implementation; the `gemel` crate (`src/`) is the reference encoder/decoder.
 
 Phase 0 is complete when: all seven documents exist and are internally consistent; the
 canonical grammar, hashing, identity, and all twenty-two families are specified; every
-row of the §13 conformance matrix is satisfied by a normative definition; golden
+row of the §11 conformance matrix is satisfied by a normative definition; golden
 fixtures are committed, executable, and passing; the decoder demonstrably fails closed
 against the negative fixture catalog; and `cargo test` is green in the reference
 implementation.
+
+---
+
+## 17. Phase 1 Exit Statement
+
+Phase 1 is complete when: `init`, `status`, `snapshot`, `change begin`, `change finish`,
+`log`, `show`, `diff`, `checkout`, and `fsck` operate on a local store; the
+demonstration `State S0 → Intent I1 → Trajectory T1 → Change C1 → State S1` completes
+with byte-exact content-addressed reconstruction of both states; every row of the §11.5
+matrix is satisfied; `cargo test` (unit + golden + integration) and
+`cargo clippy --all-targets` are green with zero warnings; and `cargo run --bin golden-gen`
+reports the golden vectors up to date.
+
+Phase 1 exit verified: `cargo test` green (78 unit, 2 golden, 11 integration),
+`cargo clippy --all-targets` zero warnings, golden vectors unchanged, and the CLI
+demonstration `gemel init → snapshot → change begin → change finish → log → show →
+diff → status → fsck` exercised end-to-end by the integration suite.

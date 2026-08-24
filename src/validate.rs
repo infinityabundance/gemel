@@ -1,10 +1,10 @@
 //! Family-specific object validation (INVARIANTS.md §4) and path rules.
 
 use crate::error::ObjectError;
-use crate::spec::{op_kind_tags, schema_for};
-use crate::value::{Body, Field, Object, Value};
 use crate::family::Family;
 use crate::limits::Limits;
+use crate::spec::{op_kind_tags, schema_for};
+use crate::value::{Body, Field, Object, Value};
 
 /// Tree modes (OBJECT_MODEL.md §6.2).
 pub const MODE_FILE: u64 = 0o100644;

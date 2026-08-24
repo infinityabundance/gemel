@@ -5,12 +5,12 @@
 
 use crate::consts::{ENC_VERSION, FLAGS_ZERO, MAGIC, TAG_MAX_SCHEMA};
 use crate::error::ObjectError;
-use crate::spec::{schema_for, FamilySchema, Type};
-use crate::validate::{is_valid_canonical_path, validate_family};
-use crate::value::{Body, Field, Object, Value};
 use crate::family::Family;
 use crate::gid::Gid;
 use crate::limits::Limits;
+use crate::spec::{schema_for, FamilySchema, Type};
+use crate::validate::{is_valid_canonical_path, validate_family};
+use crate::value::{Body, Field, Object, Value};
 use crate::varint::{decode_i64, decode_u64};
 use std::str;
 

@@ -3,8 +3,8 @@
 //! `ObjectId = BLAKE3-256(canonical envelope bytes)`.
 
 use crate::error::ObjectError;
-use crate::value::Object;
 use crate::gid::Gid;
+use crate::value::Object;
 
 /// The BLAKE3-256 identity digest of canonical envelope bytes.
 pub fn object_id_bytes(bytes: &[u8]) -> [u8; 32] {

@@ -4,12 +4,12 @@
 use crate::decode::decode_object;
 use crate::encode::encode_object;
 use crate::error::ObjectError;
-use crate::golden::build_all;
-use crate::spec::{FamilySchema, FieldSpec, Type};
-use crate::value::{Body, Field, Object, Value};
 use crate::family::Family;
 use crate::gid::Gid;
+use crate::golden::build_all;
 use crate::limits::Limits;
+use crate::spec::{FamilySchema, FieldSpec, Type};
+use crate::value::{Body, Field, Object, Value};
 use crate::varint::encode_u64;
 
 const LIMITS: Limits = Limits {

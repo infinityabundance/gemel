@@ -5,11 +5,11 @@
 
 use crate::consts::{ENC_VERSION, FLAGS_ZERO, MAGIC};
 use crate::error::ObjectError;
+use crate::family::Family;
+use crate::limits::Limits;
 use crate::spec::{schema_for, FamilySchema, Type};
 use crate::validate::{is_valid_canonical_path, validate_family};
 use crate::value::{Body, Field, Object, Value};
-use crate::family::Family;
-use crate::limits::Limits;
 use crate::varint::{encode_i64, encode_u64};
 
 /// Encodes an object into its canonical envelope bytes.
