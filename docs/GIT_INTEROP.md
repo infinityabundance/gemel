@@ -1,6 +1,9 @@
 # Gemel — Git Interoperability
 
-Status: **Normative.** Version 1.0.0. Implementation phase: Phase 4 (design fixed now).
+Status: **Normative.** Version 1.0.0. Implementation phase: **Phase 4 (complete)** —
+`gemel export-git`, `gemel import-git`, and `gemel clone` implement this document;
+`gemel push`/`gemel pull` (Gemel↔Git projections) arrive with Phase 6 distributed
+operation.
 
 Git interchange is mandatory initially (brief §25) but must never dictate Gemel's
 internal ontology. Export to Git is **lossy by design**; import never fabricates.

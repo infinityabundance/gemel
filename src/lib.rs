@@ -31,6 +31,7 @@ pub mod exchange;
 pub mod family;
 pub mod gid;
 pub mod git_adapter;
+pub mod git_interop;
 pub mod git_io;
 pub mod golden;
 pub mod hash;

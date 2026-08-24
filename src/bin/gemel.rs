@@ -234,6 +234,44 @@ enum Command {
     /// Git-carried exchange rollups (Phase 1.5).
     #[command(subcommand)]
     Exchange(ExchangeCmd),
+    /// Deterministically project Gemel changes into a Git repository
+    /// (Phase 4; GIT_INTEROP.md §3).
+    ExportGit {
+        /// Target Git directory (default: `<repo>/.git`).
+        #[arg(long)]
+        git_dir: Option<PathBuf>,
+        /// Branch to write (default: main).
+        #[arg(long, default_value = "main")]
+        branch: String,
+        /// Emit GEMEL-CLAIM trailers (default: omit).
+        #[arg(long)]
+        include_claims: bool,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Deterministically import a Git history into Gemel (Phase 4;
+    /// GIT_INTEROP.md §4). Never fabricates provenance.
+    ImportGit {
+        /// Git directory to read (default: `<repo>/.git`).
+        #[arg(long)]
+        git_dir: Option<PathBuf>,
+        /// Commit-ish to import (default: HEAD).
+        #[arg(long, default_value = "HEAD")]
+        head: String,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Clone a Git repository and import its history as Gemel work
+    /// (Phase 4; GIT_INTEROP.md §6).
+    Clone {
+        /// Remote URL.
+        url: String,
+        /// Target directory (default: derived from the URL).
+        #[arg(long)]
+        dir: Option<PathBuf>,
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -1643,6 +1681,128 @@ fn run(cli: &Cli) -> Result<u8, Error> {
                 Ok(0)
             }
         },
+        Command::ExportGit {
+            git_dir,
+            branch,
+            include_claims,
+            json,
+        } => {
+            let repo = Repo::find(cli.repo.as_deref().unwrap_or(&std::env::current_dir()?))?;
+            let target = git_dir.clone().unwrap_or_else(|| repo.root().join(".git"));
+            let out = gemel::git_interop::export_git(
+                &repo,
+                &gemel::git_interop::ExportGitOptions {
+                    git_dir: target,
+                    branch: branch.clone(),
+                    include_claims: *include_claims,
+                },
+            )?;
+            if *json {
+                print_json(
+                    "export-git",
+                    json!({
+                        "commits": out.commits,
+                        "trees": out.trees,
+                        "mappings": out.mappings,
+                        "head": out.head_oid,
+                        "branch": out.branch,
+                    }),
+                );
+            } else {
+                println!(
+                    "exported {} commit(s) ({}, {} trees, {} mappings)",
+                    out.commits, out.branch, out.trees, out.mappings
+                );
+                println!("  head: {}", out.head_oid);
+            }
+            Ok(0)
+        }
+        Command::ImportGit {
+            git_dir,
+            head,
+            json,
+        } => {
+            let repo = Repo::find(cli.repo.as_deref().unwrap_or(&std::env::current_dir()?))?;
+            let source = git_dir.clone().unwrap_or_else(|| repo.root().join(".git"));
+            let out = gemel::git_interop::import_git(
+                &repo,
+                &gemel::git_interop::ImportGitOptions {
+                    git_dir: source,
+                    head: head.clone(),
+                },
+            )?;
+            if *json {
+                print_json(
+                    "import-git",
+                    json!({
+                        "commits": out.commits,
+                        "changes": out.changes,
+                        "trajectories": out.trajectories,
+                        "mappings": out.mappings,
+                        "relinked": out.relinked,
+                        "ignored_trailers": out.ignored_trailers,
+                        "unknown_producers": out.unknown_producers,
+                    }),
+                );
+            } else {
+                println!(
+                    "imported {} commit(s) as {} change(s) in {} trajectory(s), {} mapping(s)",
+                    out.commits, out.changes, out.trajectories, out.mappings
+                );
+                if out.relinked > 0 {
+                    println!(
+                        "  relinked {} Gemel identity(ies) via trailers",
+                        out.relinked
+                    );
+                }
+                if out.ignored_trailers > 0 {
+                    println!(
+                        "  ignored {} hostile/unvalidated trailer(s)",
+                        out.ignored_trailers
+                    );
+                }
+            }
+            Ok(0)
+        }
+        Command::Clone { url, dir, json } => {
+            // git clone (argv-safe), then a native Gemel store + import.
+            let target = dir.clone().unwrap_or_else(|| {
+                let base = url.rsplit('/').next().unwrap_or(url).to_string();
+                let base = base.strip_suffix(".git").unwrap_or(&base).to_string();
+                std::env::current_dir()
+                    .unwrap_or_else(|_| ".".into())
+                    .join(base)
+            });
+            gemel::git_adapter::clone_repo(url, &target)?;
+            let repo = Repo::init(&target, &InitOptions::default())?;
+            gemel::exchange::export::install_local_gitignore(repo.meta_dir())?;
+            let out = gemel::git_interop::import_git(
+                &repo,
+                &gemel::git_interop::ImportGitOptions {
+                    git_dir: target.join(".git"),
+                    head: "HEAD".into(),
+                },
+            )?;
+            if *json {
+                print_json(
+                    "clone",
+                    json!({
+                        "directory": target.display().to_string(),
+                        "commits": out.commits,
+                        "changes": out.changes,
+                        "trajectories": out.trajectories,
+                    }),
+                );
+            } else {
+                println!(
+                    "cloned {} as {} change(s) in {} trajectory(s)",
+                    target.display(),
+                    out.changes,
+                    out.trajectories
+                );
+            }
+            Ok(0)
+        }
     }
 }
 

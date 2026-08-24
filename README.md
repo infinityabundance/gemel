@@ -18,7 +18,9 @@ deterministically encoded object model implemented in native Rust.
 
 ## Status
 
-**Phase 1.5 — Git-Carried Exchange Rollups — complete.** Next: Phase 4 (Git Interchange).
+**Phase 4 — Git Interchange — complete.** Next: Phase 5 (Semantic Depth).
+
+**Phase 1.5 — Git-Carried Exchange Rollups — complete.**
 
 **Phase 3 — Reconciliation — complete.**
 
@@ -115,6 +117,24 @@ through ordinary Git infrastructure without reducing Gemel to Git's ontology:
   incremental export, golden fixtures — `tests/exchange_tests.rs`.
 - Normative exchange protocol: `docs/EXCHANGE.md` (a second implementation must be
   possible from the specification alone).
+
+**Phase 4 delivers deterministic Git interchange** (GIT_INTEROP.md):
+
+- `gemel export-git` — projects the head's causal-parent closure into ordinary Git
+  commits (loose objects via the pure-Rust `git_io`), with `GEMEL-CHANGE`/`INTENT`/
+  `TRAJECTORY`/`CLAIM`/`EXPORT-VERSION` trailers, deterministic authors/timestamps
+  (no wall clock), and canonical `mapping` objects under `refs/mappings/export/`.
+- `gemel import-git` — topological import of real Git histories (packed or loose):
+  states from Git trees, deterministic operations with conservative rename
+  detection, first-parent-chain trajectories, synthetic `git_import`/`human`/
+  `unknown` producers, `refs/mappings/import/` with trailer re-linking, hostile
+  trailer rejection, and idempotent re-import. Provenance Git cannot supply is
+  `unknown`, never fabricated.
+- `gemel clone <url>` — git clone + native store + import in one step.
+- The provable round-trip core: trees/topology/messages/authors/timestamps survive
+  Git→Gemel→Git exactly; identity linkage survives Gemel→Git→Gemel through trailers
+  (re-import into the originating repository re-links the original objects).
+- 9 courts in `tests/git_interop_tests.rs` using real Git repositories.
 
 ## Reading order
 

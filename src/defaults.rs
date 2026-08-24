@@ -28,8 +28,15 @@ fn b(v: bool) -> Value {
     Value::B(v)
 }
 
-/// A human producer object (OBJECT_MODEL.md §6.14).
+/// A human producer object (OBJECT_MODEL.md §6.14). The created-at metadata
+/// defaults to the wall clock for interactive work.
 pub fn human_producer_object(name: &str, email: Option<&str>) -> Object {
+    human_producer_object_at(name, email, now_ms())
+}
+
+/// A human producer with an explicit created-at (deterministic interchange:
+/// imports carry the Git author timestamp instead of the wall clock).
+pub fn human_producer_object_at(name: &str, email: Option<&str>, created_at: i64) -> Object {
     let mut identity = vec![f(0x01, s(name))];
     if let Some(email) = email {
         identity.push(f(0x02, s(email)));
@@ -41,13 +48,18 @@ pub fn human_producer_object(name: &str, email: Option<&str>) -> Object {
             f(0x02, s(name)),
             f(0x03, rec(vec![f(0x01, rec(identity))])),
             f(0x04, s("FULL")),
-            f(0x06, i(now_ms())),
+            f(0x06, i(created_at)),
         ],
     )
 }
 
 /// An automation producer object (OBJECT_MODEL.md §6.14).
 pub fn automation_producer_object(name: &str) -> Object {
+    automation_producer_object_at(name, now_ms())
+}
+
+/// An automation producer with an explicit created-at.
+pub fn automation_producer_object_at(name: &str, created_at: i64) -> Object {
     Object::fields(
         crate::family::Family::Producer,
         vec![
@@ -61,7 +73,36 @@ pub fn automation_producer_object(name: &str) -> Object {
                 )]),
             ),
             f(0x04, s("DIGEST_ONLY")),
-            f(0x06, i(now_ms())),
+            f(0x06, i(created_at)),
+        ],
+    )
+}
+
+/// The deterministic `git_import` producer used by `import-git`: a fixed
+/// created-at of 0 (the epoch sentinel, GIT_INTEROP.md §4.1) so importing the
+/// same history twice produces identical producer identities.
+pub fn git_import_producer_object() -> Object {
+    Object::fields(
+        crate::family::Family::Producer,
+        vec![
+            f(0x01, s("git_import")),
+            f(0x02, s("git-import")),
+            f(0x04, s("DIGEST_ONLY")),
+            f(0x06, i(0)),
+        ],
+    )
+}
+
+/// The deterministic `unknown` producer for provenance Git cannot supply
+/// (GIT_INTEROP.md §4.1: never invented).
+pub fn unknown_producer_object() -> Object {
+    Object::fields(
+        crate::family::Family::Producer,
+        vec![
+            f(0x01, s("unknown")),
+            f(0x02, s("unknown")),
+            f(0x04, s("DIGEST_ONLY")),
+            f(0x06, i(0)),
         ],
     )
 }

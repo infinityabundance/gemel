@@ -1,6 +1,6 @@
 # Gemel — Specification (Master Document)
 
-Status: **Phase 1.5 — Git-Carried Exchange Rollups — complete.** Next phase: Phase 4 (Git Interchange).
+Status: **Phase 4 — Git Interchange — complete.** Next phase: Phase 5 (Semantic Depth).
 Document version: 1.3.0 (schema version `encver=1`, all object families `schemever=1`).
 Audience: implementers, protocol engineers, agent authors, maintainers.
 
@@ -407,13 +407,24 @@ Reconciliation object (adopted / rejected / unresolved / verification required /
 resulting State); concurrent agents from the same base State demonstrated. No semantic
 claims beyond actual evidence; uncertainty is exposed, never invented.
 
-### Phase 4 — Git Interchange
+### Phase 4 — Git Interchange (complete)
 
 **Entry:** Phase 1.5 complete. **Exit:** deterministic Git→Gemel and Gemel→Git with
 authorship/timestamps/messages/trees/ancestry preserved; Gemel-native metadata
 represented explicitly as unknown when unavailable; stable Gemel identifiers embedded
 in Git trailers; round-trip behavior proven where mathematically possible; intentional
 loss documented.
+
+Delivered: `gemel export-git` (deterministic projection of the head's causal-parent
+closure into loose Git objects; `GEMEL-*` trailers; per-commit/tree `mapping` objects
+under `refs/mappings/export/`), `gemel import-git` (topological import with synthetic
+`git_import`/`human`/`unknown` producers, deterministic operations with conservative
+rename detection, first-parent-chain trajectories, `refs/mappings/import/` with trailer
+re-linking and hostile-trailer rejection, idempotent re-import), and `gemel clone`.
+Proven by `tests/git_interop_tests.rs` (9 courts): byte-deterministic export, identical
+re-import, Gemel→Git→Gemel identity re-link, Git→Gemel→Git content/topology/author/
+timestamp preservation, foreign-history never-fabrication, merge-commit export/import,
+and conservative rename detection.
 
 ### Phase 5 — Semantic Depth
 

@@ -32,6 +32,8 @@ pub const REF_STATE_HEAD: &str = "refs/state/head";
 pub const REF_CONFIG: &str = "refs/config";
 pub const REF_NAMES: &str = "refs/names";
 pub const REF_TRAJECTORIES: &str = "refs/trajectories";
+/// The namespace anchoring Git interchange mappings (GIT_INTEROP.md §2).
+pub const REF_MAPPINGS: &str = "refs/mappings";
 pub const REF_CASES: &str = "refs/cases";
 pub const REF_RELEASES: &str = "refs/releases";
 pub const REF_CHECKPOINTS: &str = "refs/checkpoints";
@@ -293,6 +295,7 @@ impl Repo {
             REF_RELEASES,
             REF_RECONCILIATIONS,
             REF_CHECKPOINTS,
+            REF_MAPPINGS,
         ] {
             if let Some(gid) = self.read_ref(&format!("{ns}/{name_or_id}"))? {
                 return Ok(gid);

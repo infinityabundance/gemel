@@ -156,29 +156,70 @@ pub fn state_identity_from_files_with_limits(
 }
 
 /// Publishes a state from a flat `path -> (mode, blob)` file map
-/// (reconciliation merge results). Blobs must already exist; trees and the
-/// state object are inserted.
+/// (reconciliation merge results, Git import). Blobs must already exist;
+/// trees and the state object are inserted.
 pub fn build_state_from_files(
     repo: &Repo,
     files: &std::collections::BTreeMap<String, (u64, Gid)>,
 ) -> Result<Gid, Error> {
-    let tree = build_tree_from_files(repo, files, "")?;
-    let tree_id = repo.insert_object(&tree)?;
+    let tree_id = build_tree_from_files_insert(repo, files, "")?;
     let state = Object::fields(Family::State, vec![Field::new(0x01, Value::Gid(tree_id))]);
     repo.insert_object(&state)
 }
 
-/// Recursively builds a tree object (in memory) for the entries under
-/// `prefix`. Fail-closed on a path that is both a file and a directory.
-fn build_tree_from_files(
+/// Recursively builds and *publishes* every tree object for a flat file map
+/// (subtrees are inserted too, so the resulting state is fully loadable).
+fn build_tree_from_files_insert(
     repo: &Repo,
     files: &std::collections::BTreeMap<String, (u64, Gid)>,
     prefix: &str,
-) -> Result<Object, Error> {
-    build_tree_from_files_limits(files, prefix, &repo.limits())
+) -> Result<Gid, Error> {
+    let mut names: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    let prefix_slash = if prefix.is_empty() {
+        String::new()
+    } else {
+        format!("{prefix}/")
+    };
+    for path in files.keys() {
+        let rest = match path.strip_prefix(&prefix_slash) {
+            Some(r) => r,
+            None => continue,
+        };
+        if let Some(seg) = rest.split('/').next() {
+            names.insert(seg.to_string());
+        }
+    }
+    let mut entries: Vec<(String, u64, Gid)> = Vec::new();
+    for name in names {
+        let child_prefix = if prefix.is_empty() {
+            name.clone()
+        } else {
+            format!("{prefix}/{name}")
+        };
+        let is_dir = files
+            .keys()
+            .any(|p| p.starts_with(&format!("{child_prefix}/")));
+        if is_dir {
+            if files.contains_key(&child_prefix) {
+                return Err(Error::Path(format!(
+                    "{child_prefix} is both a file and a directory"
+                )));
+            }
+            let subtree = build_tree_from_files_insert(repo, files, &child_prefix)?;
+            entries.push((name, 0o040000, subtree));
+        } else {
+            let (mode, blob) = files
+                .get(&child_prefix)
+                .ok_or_else(|| Error::Path(format!("missing file entry {child_prefix}")))?;
+            entries.push((name, *mode, *blob));
+        }
+    }
+    repo.insert_object(&build_tree_object(entries)?)
 }
 
-/// As [`build_tree_from_files`] with explicit limits.
+/// Recursively builds a tree object (in memory) for the entries under
+/// `prefix`. Fail-closed on a path that is both a file and a directory.
+/// With explicit limits.
 fn build_tree_from_files_limits(
     files: &std::collections::BTreeMap<String, (u64, Gid)>,
     prefix: &str,
@@ -758,6 +799,18 @@ pub fn synthesize_operations(
     deltas: &[FileDelta],
     producer: &Gid,
 ) -> Result<Vec<Gid>, Error> {
+    synthesize_operations_ts(repo, deltas, producer, crate::store::now_ms())
+}
+
+/// As [`synthesize_operations`] with an explicit timestamp (deterministic
+/// interchange: imports carry the Git commit timestamp instead of the wall
+/// clock, so importing the same history twice yields identical operations).
+pub fn synthesize_operations_ts(
+    repo: &Repo,
+    deltas: &[FileDelta],
+    producer: &Gid,
+    ts: i64,
+) -> Result<Vec<Gid>, Error> {
     let mut out = Vec::new();
     for d in deltas {
         let mut fields = Vec::new();
@@ -787,8 +840,8 @@ pub fn synthesize_operations(
             Value::Record(vec![Field::new(0x01, Value::Str("ok".into()))]),
         ));
         fields.push(Field::new(0x07, Value::Gid(*producer)));
-        fields.push(Field::new(0x09, Value::I(crate::store::now_ms())));
-        fields.push(Field::new(0x0A, Value::I(crate::store::now_ms())));
+        fields.push(Field::new(0x09, Value::I(ts)));
+        fields.push(Field::new(0x0A, Value::I(ts)));
         // Kind-specific field, always the highest tag for this family.
         match &d.kind {
             DeltaKind::Created | DeltaKind::Modified => {

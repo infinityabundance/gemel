@@ -420,7 +420,7 @@ fn activated_context_becomes_stale_after_git_only_edit() {
     // The imported base remains the head (a later `change begin` would diff
     // the git-only edit into a recorded change), but it is not presented as
     // verifying the current source.
-    assert_eq!(st["state"].as_str().is_some(), true);
+    assert!(st["state"].as_str().is_some());
 }
 
 // ---------------------------------------------------------------------------
