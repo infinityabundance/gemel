@@ -120,7 +120,16 @@ fn verify_capture(root: &Path, log: &[CapturedEntry]) -> Result<bool, Error> {
 /// The in-memory identity of an object: canonical bytes → BLAKE3 digest,
 /// without publishing. Used by read-only plans (AGENT_PROTOCOL.md §5.10).
 pub fn object_identity(repo: &Repo, obj: &Object) -> Result<Gid, Error> {
-    let bytes = crate::encode::encode_object(obj, &repo.limits())?;
+    object_identity_with_limits(obj, &repo.limits())
+}
+
+/// Identity with explicit limits (no repository needed). Used by exchange
+/// verification against a fresh checkout without a native store.
+pub fn object_identity_with_limits(
+    obj: &Object,
+    limits: &crate::limits::Limits,
+) -> Result<Gid, Error> {
+    let bytes = crate::encode::encode_object(obj, limits)?;
     let digest = crate::hash::object_id_bytes(&bytes);
     Ok(Gid::new(obj.family, digest))
 }
@@ -131,10 +140,18 @@ pub fn state_identity_from_files(
     repo: &Repo,
     files: &std::collections::BTreeMap<String, (u64, Gid)>,
 ) -> Result<(Gid, Gid), Error> {
-    let tree = build_tree_from_files(repo, files, "")?;
-    let tree_id = object_identity(repo, &tree)?;
+    state_identity_from_files_with_limits(files, &repo.limits())
+}
+
+/// As [`state_identity_from_files`] with explicit limits (no repository).
+pub fn state_identity_from_files_with_limits(
+    files: &std::collections::BTreeMap<String, (u64, Gid)>,
+    limits: &crate::limits::Limits,
+) -> Result<(Gid, Gid), Error> {
+    let tree = build_tree_from_files_limits(files, "", limits)?;
+    let tree_id = object_identity_with_limits(&tree, limits)?;
     let state = Object::fields(Family::State, vec![Field::new(0x01, Value::Gid(tree_id))]);
-    let state_id = object_identity(repo, &state)?;
+    let state_id = object_identity_with_limits(&state, limits)?;
     Ok((tree_id, state_id))
 }
 
@@ -158,13 +175,31 @@ fn build_tree_from_files(
     files: &std::collections::BTreeMap<String, (u64, Gid)>,
     prefix: &str,
 ) -> Result<Object, Error> {
+    build_tree_from_files_limits(files, prefix, &repo.limits())
+}
+
+/// As [`build_tree_from_files`] with explicit limits.
+fn build_tree_from_files_limits(
+    files: &std::collections::BTreeMap<String, (u64, Gid)>,
+    prefix: &str,
+    limits: &crate::limits::Limits,
+) -> Result<Object, Error> {
     let mut names: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    // Only paths under this prefix participate; unrelated paths are skipped
+    // (a subtree must not fail on siblings).
+    let prefix_slash = if prefix.is_empty() {
+        String::new()
+    } else {
+        format!("{prefix}/")
+    };
     for path in files.keys() {
-        let rest = match prefix {
-            "" => path.as_str(),
-            p => path
-                .strip_prefix(&format!("{p}/"))
-                .ok_or_else(|| Error::Path(format!("{path} outside prefix {p}")))?,
+        let rest = if prefix.is_empty() {
+            path.as_str()
+        } else {
+            match path.strip_prefix(&prefix_slash) {
+                Some(r) => r,
+                None => continue, // not under this subtree
+            }
         };
         if let Some(seg) = rest.split('/').next() {
             names.insert(seg.to_string());
@@ -186,8 +221,8 @@ fn build_tree_from_files(
                     "{child_prefix} is both a file and a directory"
                 )));
             }
-            let subtree = build_tree_from_files(repo, files, &child_prefix)?;
-            let id = object_identity(repo, &subtree)?;
+            let subtree = build_tree_from_files_limits(files, &child_prefix, limits)?;
+            let id = object_identity_with_limits(&subtree, limits)?;
             entries.push((name, 0o040000, id));
         } else {
             let (mode, blob) = files
@@ -215,7 +250,7 @@ fn build_tree(
     for entry in std::fs::read_dir(dir)? {
         let entry = entry?;
         let name = entry.file_name().to_string_lossy().to_string();
-        if name == crate::store::META_DIR {
+        if is_metadata_dir(&name) {
             continue; // repository metadata is never captured
         }
         let md = entry.metadata()?;
@@ -900,6 +935,12 @@ fn is_meta_path(rel: &str) -> bool {
     rel == ".gitignore"
 }
 
+/// Directories that are metadata rather than content, never captured: the
+/// Gemel store (`.gemel`) and an enclosing Git metadata directory (`.git`).
+fn is_metadata_dir(name: &str) -> bool {
+    name == crate::store::META_DIR || name == ".git"
+}
+
 fn collect_working_files(
     dir: &Path,
     rel: &str,
@@ -909,7 +950,7 @@ fn collect_working_files(
     for entry in std::fs::read_dir(dir)? {
         let entry = entry?;
         let name = entry.file_name().to_string_lossy().to_string();
-        if name == crate::store::META_DIR {
+        if is_metadata_dir(&name) {
             continue;
         }
         let ft = entry.file_type()?;
@@ -952,6 +993,85 @@ fn collect_working_files(
     Ok(())
 }
 
+/// A non-inserting working-tree walk: the flat `path -> (mode, blob-gid)`
+/// map for the source view of a checkout, without publishing any object.
+/// Mirrors `build_state` exclusions (metadata, config, ignore rules) and
+/// enforces the object size limit. Used by exchange verification on a fresh
+/// checkout that has no native store (EXCHANGE.md §33, §17).
+pub fn pure_working_tree_files(
+    root: &Path,
+    ignore: &Ignore,
+    limits: &crate::limits::Limits,
+) -> Result<std::collections::BTreeMap<String, (u64, Gid)>, Error> {
+    let mut out = std::collections::BTreeMap::new();
+    collect_pure_files(root, "", ignore, limits, &mut out)?;
+    Ok(out)
+}
+
+fn collect_pure_files(
+    dir: &Path,
+    rel: &str,
+    ignore: &Ignore,
+    limits: &crate::limits::Limits,
+    out: &mut std::collections::BTreeMap<String, (u64, Gid)>,
+) -> Result<(), Error> {
+    for entry in std::fs::read_dir(dir)? {
+        let entry = entry?;
+        let name = entry.file_name().to_string_lossy().to_string();
+        if is_metadata_dir(&name) {
+            continue;
+        }
+        let ft = entry.file_type()?;
+        let is_dir = ft.is_dir();
+        let full_rel = if rel.is_empty() {
+            name.clone()
+        } else {
+            format!("{rel}/{name}")
+        };
+        if is_meta_path(&full_rel) {
+            continue; // repository configuration, never content (STORAGE.md §6)
+        }
+        if ignore.is_ignored(&full_rel, is_dir) {
+            continue;
+        }
+        let path = dir.join(&name);
+        if ft.is_dir() {
+            collect_pure_files(&path, &full_rel, ignore, limits, out)?;
+        } else if ft.is_symlink() {
+            let target = std::fs::read_link(&path)?;
+            #[cfg(unix)]
+            let bytes: Vec<u8> = {
+                use std::os::unix::ffi::OsStrExt;
+                target.as_os_str().as_bytes().to_vec()
+            };
+            #[cfg(not(unix))]
+            let bytes = target.to_string_lossy().as_bytes().to_vec();
+            out.insert(full_rel, (0o120000, blob_identity(&bytes)));
+        } else if ft.is_file() {
+            let bytes = std::fs::read(&path)?;
+            if bytes.len() as u64 > limits.max_object_bytes {
+                return Err(Error::Limit {
+                    kind: "object size",
+                    limit: limits.max_object_bytes,
+                    found: bytes.len() as u64,
+                });
+            }
+            let mode = if is_executable(&entry.metadata()?) {
+                0o100755
+            } else {
+                0o100644
+            };
+            out.insert(full_rel, (mode, blob_identity(&bytes)));
+        } else {
+            return Err(Error::Unsupported(format!(
+                "{}: special file type",
+                path.display()
+            )));
+        }
+    }
+    Ok(())
+}
+
 /// BLAKE3 of the would-be blob envelope (GCE): magic, encver 1, family blob,
 /// schemever 1, flags 0, bodylen, content.
 fn blob_digest_of(content: &[u8]) -> [u8; 32] {
@@ -966,6 +1086,12 @@ fn blob_digest_of(content: &[u8]) -> [u8; 32] {
     env.extend_from_slice(&len);
     env.extend_from_slice(content);
     crate::hash::object_id_bytes(&env)
+}
+
+/// The blob identity of raw content (the would-be blob object id), without
+/// inserting. Used for carrier-backed and staged-source verification.
+pub fn blob_identity(content: &[u8]) -> Gid {
+    Gid::new(Family::Blob, blob_digest_of(content))
 }
 
 // ---------------------------------------------------------------------------

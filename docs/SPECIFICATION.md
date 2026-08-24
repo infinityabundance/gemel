@@ -1,6 +1,6 @@
 # Gemel — Specification (Master Document)
 
-Status: **Phase 3 — Reconciliation — complete.** Next phase: Phase 4 (Git Interchange).
+Status: **Phase 1.5 — Git-Carried Exchange Rollups — complete.** Next phase: Phase 4 (Git Interchange).
 Document version: 1.3.0 (schema version `encver=1`, all object families `schemever=1`).
 Audience: implementers, protocol engineers, agent authors, maintainers.
 
@@ -381,6 +381,18 @@ possible`; nothing is declared beyond the evidence (brief §13).
 
 Phase 3 exit verified by the §11.7 conformance matrix and the §19 exit statement.
 
+### Phase 1.5 — Git-Carried Exchange Rollups (complete)
+
+**Entry:** Phase 3 complete (interleaved before Phase 4 per the roadmap). **Exit:** an
+ordinary Git repository carries deterministic exchange artifacts (`.gemel/exchange/v1/`)
+such that `git clone && gemel status --json` restores the exported engineering frontier
+— Intents, Trajectories, Changes, Claims, Residuals, evidence summaries — with
+cryptographically verified identities, explicit uncertainty, and exact source-state
+binding. See `docs/EXCHANGE.md` (normative) and `tests/exchange_tests.rs` (33 courts
+using real Git repositories: transport, shallow clone, branch-merge unions, Git-only
+mutation, corruption, idempotence, byte determinism, non-interference, git cleanliness,
+index independence, incremental export, golden fixtures).
+
 ### Phase 2 — Agent-Native Value
 
 **Entry:** Phase 1 complete. **Exit:** `why`, `claims`, `evidence`, `residuals`,
@@ -397,7 +409,7 @@ claims beyond actual evidence; uncertainty is exposed, never invented.
 
 ### Phase 4 — Git Interchange
 
-**Entry:** Phase 3 complete. **Exit:** deterministic Git→Gemel and Gemel→Git with
+**Entry:** Phase 1.5 complete. **Exit:** deterministic Git→Gemel and Gemel→Git with
 authorship/timestamps/messages/trees/ancestry preserved; Gemel-native metadata
 represented explicitly as unknown when unavailable; stable Gemel identifiers embedded
 in Git trailers; round-trip behavior proven where mathematically possible; intentional

@@ -14,7 +14,7 @@ use gemel::store::{Error, InitOptions, Repo, REF_STATE_HEAD};
 use gemel::value::Object;
 use gemel::workflow;
 use serde_json::json;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 #[derive(Parser)]
@@ -231,6 +231,43 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// Git-carried exchange rollups (Phase 1.5).
+    #[command(subcommand)]
+    Exchange(ExchangeCmd),
+}
+
+#[derive(Subcommand)]
+enum ExchangeCmd {
+    /// Discover, validate, and report exchange material.
+    Status {
+        #[arg(long)]
+        json: bool,
+    },
+    /// Generate deterministic missing packs and a Frontier Descriptor
+    /// (append-only; frontier last).
+    Export {
+        #[arg(long, default_value = "frontier")]
+        profile: String,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Explicitly quarantine-ingest exchange material (normally automatic
+    /// via `status`).
+    Ingest {
+        #[arg(long)]
+        json: bool,
+    },
+    /// Validate exchange artifacts without activating them.
+    Verify {
+        /// Verify against the working tree (default).
+        #[arg(long)]
+        working_tree: bool,
+        /// Verify against the Git index (staged tree).
+        #[arg(long)]
+        git_index: bool,
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -347,6 +384,9 @@ fn run(cli: &Cli) -> Result<u8, Error> {
                     author_email: author_email.clone(),
                 },
             )?;
+            // Keep the local native store invisible to Git while allowing
+            // exchange material to be tracked (EXCHANGE.md §3).
+            let _ = gemel::exchange::export::install_local_gitignore(repo.meta_dir());
             let config = repo.read_ref(gemel::store::REF_CONFIG)?.unwrap();
             let producer = repo.read_meta()?["default_producer"]
                 .as_str()
@@ -365,10 +405,45 @@ fn run(cli: &Cli) -> Result<u8, Error> {
             Ok(0)
         }
         Command::Status { json, verbose } => {
-            let repo = Repo::find(cli.repo.as_deref().unwrap_or(&std::env::current_dir()?))?;
+            // Phase 1.5: discover exchange material and auto-ingest (or
+            // bootstrap a fresh native store) before computing status
+            // (EXCHANGE.md §34, §17).
+            let cwd = std::env::current_dir()?;
+            let start = cli.repo.as_deref().unwrap_or(&cwd);
+            let (repo, bootstrapped, exchange) = match discover_exchange_root(start)? {
+                None => {
+                    let repo = Repo::find(start)?;
+                    (repo, false, false)
+                }
+                Some(root)
+                    if root
+                        .join(gemel::store::META_DIR)
+                        .join("meta.json")
+                        .is_file() =>
+                {
+                    let repo = Repo::open(&root)?;
+                    let has_exchange =
+                        !gemel::exchange::discover_frontiers(repo.meta_dir())?.is_empty();
+                    if has_exchange {
+                        let _ = gemel::exchange::ingest::ingest(&repo)?;
+                    }
+                    (repo, false, has_exchange)
+                }
+                Some(root) => {
+                    // Fresh native store over existing exchange material.
+                    let out = gemel::exchange::ingest::bootstrap(&root)?;
+                    let repo = Repo::open(&root)?;
+                    (repo, true, out.frontiers_found > 0)
+                }
+            };
             let st = gemel::query::status(&repo)?;
+            let exchange_block = exchange_json(&repo, exchange, bootstrapped)?;
+            // Readiness must carry the source-binding mismatch: an imported
+            // context that does not describe the checked-out source is never
+            // READY (EXCHANGE.md §19, §56).
+            let stale = exchange && !exchange_block["source_match"].as_bool().unwrap_or(false);
             if *json {
-                let result = json!({
+                let mut result = json!({
                     "trajectory": st.trajectory,
                     "intent": st.intent.map(|g| g.to_string()),
                     "state": st.state.map(|g| g.to_string()),
@@ -388,7 +463,12 @@ fn run(cli: &Cli) -> Result<u8, Error> {
                         "disposition": r.disposition,
                     })).collect::<Vec<_>>(),
                     "readiness": st.readiness.as_str(),
+                    "exchange": exchange_block,
                 });
+                if stale {
+                    result["readiness"] = json!("NOT_READY");
+                    result["exchange"]["context"] = json!("STALE");
+                }
                 print_json("status", result);
             } else {
                 println!(
@@ -398,6 +478,17 @@ fn run(cli: &Cli) -> Result<u8, Error> {
                 );
                 if let Some(state) = &st.state {
                     println!("state: {}", state);
+                }
+                if exchange {
+                    println!(
+                        "exchange: present{}",
+                        if bootstrapped { " (bootstrapped)" } else { "" }
+                    );
+                    if stale {
+                        println!(
+                            "exchange: SOURCE_CONTEXT_DIVERGED (imported context is historical)"
+                        );
+                    }
                 }
                 let (added, modified, deleted) =
                     st.changed
@@ -586,23 +677,37 @@ fn run(cli: &Cli) -> Result<u8, Error> {
                         worktree: worktree.clone(),
                     },
                 )?;
+                // Phase 1.5 (§21): when the repository lives inside a Git
+                // worktree, automatically refresh the exchange projection so
+                // the change's frontier is ready to be committed with the
+                // source. A projection failure warns but never fails the
+                // change (the exchange is derived, not primary).
+                let mut exchange_exported = false;
+                if repo.root().join(".git").exists() {
+                    match gemel::exchange::export::export(
+                        &repo,
+                        gemel::exchange::export::Profile::Frontier,
+                    ) {
+                        Ok(_) => exchange_exported = true,
+                        Err(e) => eprintln!("warning: exchange export failed: {e}"),
+                    }
+                }
                 if *json {
-                    print_json(
-                        "change finish",
-                        json!({
-                            "change": out.change.to_string(),
-                            "change_name": out.change_name,
-                            "trajectory": out.trajectory.to_string(),
-                            "trajectory_name": out.trajectory_name,
-                            "state": out.state.to_string(),
-                            "state_name": out.state_name,
-                            "operations": out.operations.iter().map(|g| g.to_string()).collect::<Vec<_>>(),
-                            "claims": out.claims.iter().map(|g| g.to_string()).collect::<Vec<_>>(),
-                            "evidence": out.evidence.iter().map(|g| g.to_string()).collect::<Vec<_>>(),
-                            "residuals": out.residuals.iter().map(|g| g.to_string()).collect::<Vec<_>>(),
-                            "new_trajectory": out.is_new_trajectory,
-                        }),
-                    );
+                    let result = json!({
+                        "change": out.change.to_string(),
+                        "change_name": out.change_name,
+                        "trajectory": out.trajectory.to_string(),
+                        "trajectory_name": out.trajectory_name,
+                        "state": out.state.to_string(),
+                        "state_name": out.state_name,
+                        "operations": out.operations.iter().map(|g| g.to_string()).collect::<Vec<_>>(),
+                        "claims": out.claims.iter().map(|g| g.to_string()).collect::<Vec<_>>(),
+                        "evidence": out.evidence.iter().map(|g| g.to_string()).collect::<Vec<_>>(),
+                        "residuals": out.residuals.iter().map(|g| g.to_string()).collect::<Vec<_>>(),
+                        "new_trajectory": out.is_new_trajectory,
+                        "exchange": { "exported": exchange_exported },
+                    });
+                    print_json("change finish", result);
                 } else {
                     println!(
                         "{} (change {}) on {} ({}), state {} ({})",
@@ -615,6 +720,9 @@ fn run(cli: &Cli) -> Result<u8, Error> {
                     );
                     if !out.operations.is_empty() {
                         println!("  {} operation(s)", out.operations.len());
+                    }
+                    if exchange_exported {
+                        println!("  exchange: updated");
                     }
                 }
                 Ok(0)
@@ -823,6 +931,10 @@ fn run(cli: &Cli) -> Result<u8, Error> {
                     "repairs": report.repairs,
                     "journal_recovered": report.journal_recovered,
                     "exit_code": report.exit_code(),
+                    "exchange": {
+                        "frontiers": report.exchange_frontiers,
+                        "imported": report.exchange_imported,
+                    },
                 });
                 print_json("fsck", result);
             } else {
@@ -835,6 +947,12 @@ fn run(cli: &Cli) -> Result<u8, Error> {
                 }
                 for r in &report.repairs {
                     println!("repaired: {r}");
+                }
+                if report.exchange_frontiers > 0 {
+                    println!(
+                        "exchange: {} frontier(s), {} imported",
+                        report.exchange_frontiers, report.exchange_imported
+                    );
                 }
                 if report.is_clean() {
                     println!("repository clean");
@@ -1336,7 +1454,252 @@ fn run(cli: &Cli) -> Result<u8, Error> {
             }
             Ok(0)
         }
+        Command::Exchange(cmd) => match cmd {
+            ExchangeCmd::Status { json } => {
+                let cwd = std::env::current_dir()?;
+                let start = cli.repo.as_deref().unwrap_or(&cwd);
+                let root = match discover_exchange_root(start)? {
+                    Some(r) => r,
+                    None => return Err(Error::NotARepository(start.to_path_buf())),
+                };
+                let repo = if root
+                    .join(gemel::store::META_DIR)
+                    .join("meta.json")
+                    .is_file()
+                {
+                    Some(Repo::open(&root)?)
+                } else {
+                    None
+                };
+                let s = gemel::exchange::ingest::status(repo.as_ref(), &root)?;
+                if *json {
+                    print_json(
+                        "exchange status",
+                        json!({
+                            "detected": s.detected,
+                            "native_store": s.native_store,
+                            "current_source_state": s.current_source_state.map(|g| g.to_string()),
+                            "frontiers": s.frontiers.iter().map(|f| json!({
+                                "id": f.id,
+                                "source_state": f.source_state.to_string(),
+                                "head_change": f.head_change.to_string(),
+                                "profile": f.profile,
+                                "imported": f.imported,
+                                "binding": match f.binding {
+                                    gemel::exchange::ingest::SourceBinding::Matched => "matched",
+                                    gemel::exchange::ingest::SourceBinding::Diverged => "diverged",
+                                },
+                            })).collect::<Vec<_>>(),
+                            "active": s.active,
+                            "pending_export": s.pending_export,
+                        }),
+                    );
+                } else {
+                    if !s.detected {
+                        println!("no exchange material present");
+                    } else {
+                        println!(
+                            "exchange detected ({} frontier(s)){}",
+                            s.frontiers.len(),
+                            if s.native_store {
+                                ""
+                            } else {
+                                " [no native store]"
+                            }
+                        );
+                        for f in &s.frontiers {
+                            println!(
+                                "  {} source={} profile={} imported={} {}",
+                                f.id,
+                                f.source_state,
+                                f.profile,
+                                f.imported,
+                                match f.binding {
+                                    gemel::exchange::ingest::SourceBinding::Matched => "MATCHED",
+                                    gemel::exchange::ingest::SourceBinding::Diverged => "DIVERGED",
+                                }
+                            );
+                        }
+                        if s.pending_export {
+                            println!(
+                                "pending export: exchange does not describe the current source"
+                            );
+                        }
+                    }
+                }
+                Ok(0)
+            }
+            ExchangeCmd::Export { profile, json } => {
+                let repo = Repo::find(cli.repo.as_deref().unwrap_or(&std::env::current_dir()?))?;
+                let profile = gemel::exchange::export::Profile::parse(profile)?;
+                let out = gemel::exchange::export::export(&repo, profile)?;
+                if *json {
+                    print_json(
+                        "exchange export",
+                        json!({
+                            "profile": profile.as_str(),
+                            "packs_written": out.packs_written,
+                            "packs_reused": out.packs_reused,
+                            "objects": out.objects,
+                            "frontier": out.frontier,
+                            "source_state": out.source_state.to_string(),
+                        }),
+                    );
+                } else {
+                    println!(
+                        "exported {} objects ({} packs written, {} reused)",
+                        out.objects, out.packs_written, out.packs_reused
+                    );
+                    println!("  frontier: {}", out.frontier);
+                    println!("  source state: {}", out.source_state);
+                }
+                Ok(0)
+            }
+            ExchangeCmd::Ingest { json } => {
+                let repo = Repo::find(cli.repo.as_deref().unwrap_or(&std::env::current_dir()?))?;
+                let out = gemel::exchange::ingest::ingest(&repo)?;
+                if *json {
+                    print_json(
+                        "exchange ingest",
+                        json!({
+                            "frontiers_found": out.frontiers_found,
+                            "frontiers_imported": out.frontiers_imported,
+                            "frontiers_already_imported": out.frontiers_already_imported,
+                            "packs_processed": out.packs_processed,
+                            "objects_promoted": out.objects_promoted,
+                            "current_source_state": out.current_source_state.map(|g| g.to_string()),
+                            "matching": out.matching,
+                            "diverged": out.diverged,
+                            "activated": out.activated,
+                        }),
+                    );
+                } else {
+                    println!(
+                        "ingested {} frontier(s) ({} already imported), {} objects promoted",
+                        out.frontiers_imported,
+                        out.frontiers_already_imported,
+                        out.objects_promoted
+                    );
+                    for m in &out.matching {
+                        println!("  matched: {m}");
+                    }
+                    for d in &out.diverged {
+                        println!("  diverged: {d}");
+                    }
+                    if let Some(a) = &out.activated {
+                        println!("  activated: {a}");
+                    }
+                }
+                Ok(0)
+            }
+            ExchangeCmd::Verify {
+                working_tree,
+                git_index,
+                json,
+            } => {
+                let cwd = std::env::current_dir()?;
+                let start = cli.repo.as_deref().unwrap_or(&cwd);
+                let root = match discover_exchange_root(start)? {
+                    Some(r) => r,
+                    None => return Err(Error::NotARepository(start.to_path_buf())),
+                };
+                let mode = if *git_index {
+                    gemel::exchange::ingest::VerifyMode::GitIndex
+                } else {
+                    let _ = working_tree;
+                    gemel::exchange::ingest::VerifyMode::WorkingTree
+                };
+                let out = gemel::exchange::ingest::verify(&root, mode)?;
+                if *json {
+                    print_json(
+                        "exchange verify",
+                        json!({
+                            "frontiers_validated": out.frontiers_validated,
+                            "packs_validated": out.packs_validated,
+                            "source_state": out.source_state.to_string(),
+                            "staged": out.staged,
+                            "matched": out.matched,
+                            "diverged": out.diverged,
+                        }),
+                    );
+                } else {
+                    println!(
+                        "validated {} frontier(s), {} pack(s) against {}",
+                        out.frontiers_validated,
+                        out.packs_validated,
+                        if out.staged {
+                            "git index"
+                        } else {
+                            "working tree"
+                        }
+                    );
+                    for m in &out.matched {
+                        println!("  matched: {m}");
+                    }
+                    for d in &out.diverged {
+                        println!("  diverged: {d}");
+                    }
+                }
+                Ok(0)
+            }
+        },
     }
+}
+
+/// Walks up from `start` looking for `.gemel/` (native store) or
+/// `.gemel/exchange/` (exchange material only; EXCHANGE.md §34).
+fn discover_exchange_root(start: &Path) -> Result<Option<PathBuf>, Error> {
+    let mut dir = Some(start);
+    while let Some(d) = dir {
+        let meta = d.join(gemel::store::META_DIR);
+        if meta.is_dir() {
+            return Ok(Some(d.to_path_buf()));
+        }
+        if meta.join(gemel::exchange::EXCHANGE_ROOT).is_dir() {
+            return Ok(Some(d.to_path_buf()));
+        }
+        dir = d.parent();
+    }
+    Ok(None)
+}
+
+/// The exchange diagnostics block for `status --json` (EXCHANGE.md §32).
+fn exchange_json(
+    repo: &Repo,
+    exchange: bool,
+    bootstrapped: bool,
+) -> Result<serde_json::Value, Error> {
+    if !exchange {
+        return Ok(json!({
+            "detected": false,
+        }));
+    }
+    let frontiers = gemel::exchange::discover_frontiers(repo.meta_dir())?;
+    let active = gemel::exchange::export::read_active_frontier(repo.meta_dir())?;
+    // Source binding is against the checked-out working tree (EXCHANGE.md
+    // §19): the frontier describes the current source only when the live
+    // tree's content state equals the frontier's source_state. The head
+    // state is never the binding (a git-only edit leaves the head state
+    // unchanged while the source diverges).
+    let source_match = gemel::exchange::export::working_tree_files(repo)
+        .ok()
+        .and_then(|files| gemel::exchange::export::content_state_identity(repo, &files).ok())
+        .map(|content_id| {
+            frontiers
+                .iter()
+                .any(|(f, _, _)| f.source_state == content_id)
+        })
+        .unwrap_or(false);
+    Ok(json!({
+        "detected": true,
+        "frontier": active.map(|a| gemel::hex::encode(&a)),
+        "source_match": source_match,
+        "bootstrapped": bootstrapped,
+        "coverage": {
+            "canonical_metadata": "complete",
+            "deep_evidence": "partial",
+        },
+    }))
 }
 
 /// Renders a human-readable view of an object by family.

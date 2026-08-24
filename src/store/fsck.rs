@@ -61,6 +61,10 @@ pub struct FsckReport {
     pub repairs: Vec<String>,
     pub index_drift: Vec<String>,
     pub journal_recovered: bool,
+    /// Exchange transport section (EXCHANGE.md §41): discovered/imported
+    /// frontiers are reported separately from the native store.
+    pub exchange_frontiers: usize,
+    pub exchange_imported: usize,
 }
 
 impl FsckReport {
@@ -84,6 +88,24 @@ impl FsckReport {
 /// Runs the full verification.
 pub fn run(repo: &Repo, opts: &FsckOptions) -> Result<FsckReport, Error> {
     let mut report = FsckReport::default();
+
+    // -- 0. Exchange transport section (EXCHANGE.md §41): report frontier
+    // state separately; blobs omitted by a carrier-backed profile are not
+    // native-store corruption.
+    let exchange_omitted = exchange_omitted_blobs(repo);
+    match crate::exchange::discover_frontiers(repo.meta_dir()) {
+        Ok(frontiers) => {
+            report.exchange_frontiers = frontiers.len();
+            report.exchange_imported = frontiers
+                .iter()
+                .filter(|(_, id, _)| crate::exchange::export::is_imported(repo.meta_dir(), id))
+                .count();
+        }
+        Err(_) => {
+            // A malformed exchange tree is reported by the exchange section
+            // of the CLI, never fatal for the native store.
+        }
+    }
 
     // -- 1. Object files: envelope, hash, schema --------------------------
     let mut on_disk: HashMap<Gid, u64> = HashMap::new();
@@ -171,12 +193,23 @@ pub fn run(repo: &Repo, opts: &FsckOptions) -> Result<FsckReport, Error> {
                 });
             }
             Err(Error::ObjectNotFound(_)) => {
-                report.problems.push(Problem {
-                    severity: Severity::Error,
-                    code: "missing-reference",
-                    message: format!("reference to missing object {id}"),
-                    id: Some(id),
-                });
+                if exchange_omitted.contains(&id) {
+                    report.problems.push(Problem {
+                        severity: Severity::Warning,
+                        code: "exchange-omitted",
+                        message: format!(
+                            "object {id} absent by exchange profile (carrier-backed source)"
+                        ),
+                        id: Some(id),
+                    });
+                } else {
+                    report.problems.push(Problem {
+                        severity: Severity::Error,
+                        code: "missing-reference",
+                        message: format!("reference to missing object {id}"),
+                        id: Some(id),
+                    });
+                }
             }
             Err(Error::ObjectCorrupt { detail, .. }) => {
                 report.problems.push(Problem {
@@ -332,6 +365,42 @@ pub fn run(repo: &Repo, opts: &FsckOptions) -> Result<FsckReport, Error> {
     }
 
     Ok(report)
+}
+
+/// The blob ids that imported exchange frontiers legitimately omit under a
+/// carrier-backed profile (EXCHANGE.md §13, §41): blobs reachable from the
+/// head changes of imported frontiers whose coverage does not carry source
+/// content. Absence of these is a coverage property, not corruption.
+fn exchange_omitted_blobs(repo: &Repo) -> HashSet<Gid> {
+    let mut out = HashSet::new();
+    let frontiers = match crate::exchange::discover_frontiers(repo.meta_dir()) {
+        Ok(f) => f,
+        Err(_) => return out,
+    };
+    let mut queue: Vec<Gid> = Vec::new();
+    for (f, _, _) in &frontiers {
+        if f.coverage.source_content != "complete" || f.coverage.evidence_payloads != "complete" {
+            queue.push(f.head_change);
+        }
+    }
+    let mut visited: HashSet<Gid> = HashSet::new();
+    while let Some(id) = queue.pop() {
+        if !visited.insert(id) {
+            continue;
+        }
+        let obj = match repo.read_object(&id) {
+            Ok(ReadOutcome::Object(o)) => o,
+            _ => continue, // absent objects are reported by the main walk
+        };
+        if obj.family == crate::family::Family::Blob {
+            out.insert(id);
+            continue;
+        }
+        for (_, to, _) in index::edges_of(&obj) {
+            queue.push(to);
+        }
+    }
+    out
 }
 
 fn verify_envelope(repo: &Repo, bytes: &[u8]) -> Result<Gid, Problem> {

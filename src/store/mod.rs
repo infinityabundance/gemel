@@ -164,12 +164,19 @@ pub struct InitOptions {
 impl Repo {
     /// Initializes a new repository at `root`, creating `.gemel/` and the
     /// initial canonical objects (default config, default producer).
+    ///
+    /// A `.gemel/` directory carrying only exchange material (fresh clone
+    /// before bootstrap; tracked `.gitignore`/`exchange/`, no `meta.json`) is
+    /// completed rather than rejected: native metadata directories are added
+    /// without clobbering tracked exchange data (EXCHANGE.md §17).
     pub fn init(root: &Path, opts: &InitOptions) -> Result<Repo, Error> {
         let meta = root.join(META_DIR);
-        if meta.exists() {
+        if meta.join("meta.json").exists() {
             return Err(Error::RepoAlreadyExists(root.to_path_buf()));
         }
-        std::fs::create_dir_all(&meta)?;
+        if !meta.exists() {
+            std::fs::create_dir_all(&meta)?;
+        }
         std::fs::create_dir_all(meta.join("objects"))?;
         std::fs::create_dir_all(meta.join("refs").join("names"))?;
         std::fs::create_dir_all(meta.join("refs").join("trajectories"))?;
@@ -224,9 +231,14 @@ impl Repo {
 
     /// Opens an existing repository. Performs opportunistic journal recovery
     /// when the write lock is free.
+    ///
+    /// A `.gemel/` directory that carries only exchange material (a fresh
+    /// clone before bootstrap; no `meta.json`) is not a repository yet:
+    /// opening it must fail cleanly without touching locks (EXCHANGE.md §17,
+    /// §34).
     pub fn open(root: &Path) -> Result<Repo, Error> {
         let meta = root.join(META_DIR);
-        if !meta.is_dir() {
+        if !meta.is_dir() || !meta.join("meta.json").is_file() {
             return Err(Error::NotARepository(root.to_path_buf()));
         }
         let repo = Repo {

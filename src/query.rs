@@ -460,7 +460,8 @@ pub fn gid_field(fields: &[Field], tag: u8) -> Option<Gid> {
     }
 }
 
-fn int_field(fields: &[Field], tag: u8) -> Option<i64> {
+/// An integer (SINT) field value.
+pub fn int_field(fields: &[Field], tag: u8) -> Option<i64> {
     match fields.iter().find(|f| f.tag == tag).map(|f| &f.value) {
         Some(Value::I(v)) => Some(*v),
         _ => None,

@@ -7,6 +7,13 @@ use crate::gid::Gid;
 use crate::value::Object;
 
 /// The BLAKE3-256 identity digest of canonical envelope bytes.
+/// BLAKE3-256 of arbitrary bytes (exchange pack/frontier identities;
+/// EXCHANGE.md §6, §8).
+pub fn blake3_256(bytes: &[u8]) -> [u8; 32] {
+    *blake3::hash(bytes).as_bytes()
+}
+
+/// BLAKE3-256 of an object envelope (object identity; OBJECT_MODEL.md §2).
 pub fn object_id_bytes(bytes: &[u8]) -> [u8; 32] {
     *blake3::hash(bytes).as_bytes()
 }

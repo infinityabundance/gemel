@@ -18,7 +18,9 @@ deterministically encoded object model implemented in native Rust.
 
 ## Status
 
-**Phase 3 — Reconciliation — complete.** Next: Phase 4 (Git Interchange).
+**Phase 1.5 — Git-Carried Exchange Rollups — complete.** Next: Phase 4 (Git Interchange).
+
+**Phase 3 — Reconciliation — complete.**
 
 **Phase 2 — Agent-Native Value — complete.**
 
@@ -83,6 +85,37 @@ deterministically encoded object model implemented in native Rust.
   --worktree /path/wa` — concurrent agents never serialize merely to avoid filesystem
   collisions; proven by `tests/phase3_tests.rs`.
 
+**Phase 1.5 delivers Git-carried exchange rollups** — Gemel's richer model travels
+through ordinary Git infrastructure without reducing Gemel to Git's ontology:
+
+- Immutable, content-addressed **packs** (`GXPK`, `gemel.exchange.pack.v1`) and
+  **Frontier Descriptors** (`gemel.exchange.frontier.v1`) under `.gemel/exchange/v1/`
+  — append-only publication (packs first, frontier last), deterministic partitioning
+  (256 KiB target), no timestamps/hostnames/git-commit-ids in descriptors.
+- A narrowly scoped `.gemel/.gitignore` keeps the native store invisible to Git while
+  the exchange namespace is tracked (`git status` stays clean).
+- **Quarantine ingestion**: every artifact is hostile input — identity verification,
+  schema checks, resource limits, bounded parent chains, no execution, idempotent;
+  conflicts (same id, different bytes) are fatal (§42).
+- **Source-state binding**: the frontier's `source_state` is the pure-content State of
+  the checked-out tree; a Git-only source change flips the context to
+  `CONTEXT_STALE` / `SOURCE_CONTEXT_DIVERGED` instead of pretending old evidence
+  verifies new source.
+- **Zero-ceremony bootstrap**: `git clone && gemel status --json` restores the
+  engineering frontier (trajectory, intent, claims, residuals, readiness) with no
+  `gemel init`, no server, no manual import; imported names (T1/C1/S1) continue the
+  local counters.
+- `gemel exchange status|export|ingest|verify` (frontier/portable profiles,
+  `--working-tree`/`--git-index` verification for CI), auto-export on `change finish`
+  inside Git worktrees, and `gemel fsck` reporting `native_store` + `exchange_transport`
+  sections with `exchange-omitted` warnings distinct from corruption.
+- 33 integration courts with **real Git repositories**: transport, shallow clone,
+  branch-merge unions, Git-only mutation, corruption classes, idempotence, byte
+  determinism across paths, non-interference, git cleanliness, index independence,
+  incremental export, golden fixtures — `tests/exchange_tests.rs`.
+- Normative exchange protocol: `docs/EXCHANGE.md` (a second implementation must be
+  possible from the specification alone).
+
 ## Reading order
 
 1. `docs/SPECIFICATION.md` — purpose, principles, architecture, conformance matrices.
@@ -106,16 +139,21 @@ src/                    the single `gemel` crate
 │                       trajectory close, residual resolve
 ├── query.rs            log/show/status, why/claims/evidence/residuals/attempts/
 │                       trajectory/context bundles, derived statuses, pagination
+├── exchange/           Phase 1.5: pack/frontier encoding, deterministic export,
+│                       quarantine ingest, source-state binding (EXCHANGE.md)
+├── git_adapter.rs      isolated `git` index/staged-tree adapter (argv-safe)
+├── git_io.rs           pure-Rust loose-object/tree/commit read-write (Phase 4 base)
 ├── ignore.rs           .gitignore matcher (documented subset of git semantics)
 ├── defaults.rs         default producer/config/retention builders
 ├── golden/             executable golden fixture definitions
 └── bin/
     ├── gemel.rs        the CLI (init status snapshot change log show diff checkout fsck
-    │                   why claims evidence residuals attempts trajectory checkpoint context)
+    │                   why claims evidence residuals attempts trajectory checkpoint
+    │                   context reconcile exchange)
     └── golden-gen.rs   golden vector generator
 golden/                 pinned golden vectors (canonical bytes + identities)
 docs/                   the normative specification set
-tests/                  Phase 1 + Phase 2 integration suites (the acceptance demos)
+tests/                  Phase 1 + 2 + 3 + 1.5 integration suites (the acceptance demos)
 ```
 
 Layering is disciplined within the crate: primitives → encoding → schema → fixtures →
@@ -124,7 +162,7 @@ store → workflow/query → CLI; nothing depends upward.
 ## Validation
 
 ```sh
-cargo test                       # unit + golden + Phase 1 integration suites
+cargo test                       # unit + golden + Phase 1/2/3/1.5 integration suites
 cargo clippy --all-targets       # zero warnings
 cargo run --bin golden-gen       # golden vectors up to date (protocol-change only)
 ```
