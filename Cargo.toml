@@ -7,7 +7,7 @@ description = "Evidence-native version control for agentic software development:
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/infinityabundance/gemel"
 readme = "README.md"
-keywords = ["version-control", "vcs", "content-addressed", "agentic", "provenance", "immutable"]
+keywords = ["version-control", "vcs", "content-addressed", "agentic", "provenance"]
 categories = ["development-tools::version-control"]
 
 [dependencies]
