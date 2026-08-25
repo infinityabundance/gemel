@@ -1,5 +1,9 @@
 # Gemel
 
+[![crates.io](https://img.shields.io/crates/v/gemel.svg)](https://crates.io/crates/gemel)
+[![docs.rs](https://img.shields.io/docsrs/gemel)](https://docs.rs/gemel)
+[![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](LICENSE)
+
 **Evidence-native version control for agentic software development.**
 
 Gemel is a distributed version-control system built from first principles for agentic

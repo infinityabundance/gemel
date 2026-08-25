@@ -1,11 +1,12 @@
 [package]
 name = "gemel"
-version = "0.10.1"
+version = "0.10.2"
 edition = "2021"
 rust-version = "1.85"
 description = "Evidence-native version control for agentic software development: canonical object encoding, content-addressed identity, immutable object store, change workflow, Git-carried exchange rollups, and CLI."
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/infinityabundance/gemel"
+homepage = "https://crates.io/crates/gemel"
 readme = "README.md"
 keywords = ["version-control", "vcs", "content-addressed", "agentic", "provenance"]
 categories = ["development-tools"]
