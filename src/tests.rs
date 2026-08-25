@@ -160,7 +160,16 @@ fn bad_encver() {
 fn bad_family() {
     expect_err(
         &env(0x17, 1, &[]),
-        ObjectError::UnknownFamily { code: 0x17 },
+        ObjectError::MissingRequiredField {
+            family: Family::SemanticEntity,
+            tag: 1,
+            name: "kind",
+        },
+    );
+    // 0x19 is beyond the family table (24 families end at 0x18).
+    expect_err(
+        &env(0x19, 1, &[]),
+        ObjectError::UnknownFamily { code: 0x19 },
     );
 }
 

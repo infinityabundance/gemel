@@ -126,7 +126,7 @@ fn every_vector_roundtrips_pins_identity_and_rebuilds() {
     }
 
     // 7. Every family is covered.
-    assert_eq!(families.len(), 22, "all 22 families must be represented");
+    assert_eq!(families.len(), 24, "all 24 families must be represented");
     for family in gemel::family::Family::ALL {
         assert!(families.contains(&family), "missing vector for {family}");
     }

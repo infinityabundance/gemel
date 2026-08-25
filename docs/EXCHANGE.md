@@ -96,12 +96,21 @@ must not maintain it by hand.
 
 | Profile | Purpose | Contents |
 |---|---|---|
-| `frontier` (default) | carry enough durable engineering knowledge that a fresh agent can orient immediately | canonical metadata: Intents, Trajectories, Changes, Cases, Claims, Residuals, verification summaries, compact Evidence, Reconciliations, AgentRun summaries, environment identities, checkpoints, trees; source payloads are carrier-backed (omitted); forensic traces omitted |
+| `frontier` (default) | carry enough durable engineering knowledge that a fresh agent can orient immediately | canonical metadata: Intents, Trajectories, Changes, Cases, Claims, Residuals, verification summaries, compact Evidence, Reconciliations, AgentRun summaries, environment identities, checkpoints, trees, the head state's semantic index (Phase 5); source payloads are carrier-backed (omitted); forensic traces omitted |
 | `portable` | substantially self-contained transported context | frontier + canonical source objects (blobs), Tier 1 reproducibility material, compact fixtures, fuller Evidence closure |
 | `forensic` | reserved for deeper retained trace material | reserved; activating it is an explicit repository policy decision, never a silent upgrade |
 
 Coverage is first-class: presence of exchange material never implies presence of all
 Gemel knowledge (§12).
+
+Phase 5: the frontier seeds `refs/semantic/head`, so the semantic index of the head
+state (and its entities, lineage ancestors, and the published indexer producer)
+travels with the frontier. On activation, ingestion re-establishes
+`refs/semantic/state/<hex>`, `refs/semantic/current`, and `refs/semantic/head` over
+the imported objects when the imported material carries exactly one index for the
+activated state — divergent derived indexes for one state are never silently
+preferred (the client rebuilds deterministically instead). Rehydrated semantic
+identities are identical to the exporting repository's (content-addressed).
 
 ## 5. Coverage
 

@@ -1,6 +1,6 @@
 # Gemel — Specification (Master Document)
 
-Status: **Phase 4 — Git Interchange — complete.** Next phase: Phase 5 (Semantic Depth).
+Status: **Phase 5 — Semantic Depth — complete.** Next phase: Phase 6 (Distributed Operation).
 Document version: 1.3.0 (schema version `encver=1`, all object families `schemever=1`).
 Audience: implementers, protocol engineers, agent authors, maintainers.
 
@@ -56,7 +56,8 @@ evolution.
 
 - No distributed synchronization (Phase 6).
 - No Git wire-protocol compatibility (Phase 4/6; Git *interchange* is designed now).
-- No semantic indexing beyond the object model (Phase 5).
+- No semantic indexing beyond the object model (Phase 5; the lexical extractor is
+  deterministic declaration indexing, not program analysis).
 - No UI, chat integration, embeddings, or vector database (explicitly deferred;
   embeddings are *never* canonical semantics — see §37 of the brief and §8.7 of
   OBJECT_MODEL.md).
@@ -426,13 +427,35 @@ re-import, Gemel→Git→Gemel identity re-link, Git→Gemel→Git content/topol
 timestamp preservation, foreign-history never-fabrication, merge-commit export/import,
 and conservative rename detection.
 
-### Phase 5 — Semantic Depth
+### Phase 5 — Semantic Depth (complete)
 
 **Entry:** Phase 4 complete. **Exit:** language-aware semantic indexing (starting with
 Rust) providing identities for module/type/trait/impl/function/method/constant/static/
 test/feature/dependency; richer `why`, `diff --semantic`, `attempts`, `impact`.
 Language intelligence is an enhancement, never a core storage dependency; arbitrary
 files work without it.
+
+Delivered: two new canonical families — `semantic-entity` (kind, name, module path,
+file span, signature, visibility, explicit lineage: `lineage_from`/`lineage_evidence`/
+`lineage_certainty` ∈ {observed, possible, unknown}, state, producer, created-at) and
+`semantic-index` (state → entity list) — plus a deterministic lexical Rust extractor
+(`src/semantic/rust.rs`: strings, raw strings, char literals, line/nested-block
+comments, attributes, lifetimes, generics; `pub fn`/`struct`/`enum`/`union`/`trait`/
+`impl Trait for Type`/`mod` (inline + file)/`const`/`static`/`use`/`macro_rules`/
+`extern "C" fn`/`type` aliases; nested inline modules). `gemel index` builds the index
+of a state (head by default); `gemel semantic` resolves entities by name, `path::name`,
+`file:line`, or identity; `gemel diff --semantic` reports added/removed/modified/moved
+entities (moves only via explicit recorded lineage); `gemel why` and `gemel attempts`
+resolve semantic subjects and match across lineage aliases, so moved entities surface
+the work that touched their ancestors. The indexer producer is published, so fsck
+reachability and exchange export carry the semantic graph; the exchange frontier now
+seeds `refs/semantic/head` and ingest re-establishes the semantic refs on activation,
+so a fresh Git clone recovers identical semantic identities. Proven by
+`tests/phase5_tests.rs` (12 courts): extraction correctness, index determinism and
+dedup, observed-vs-possible lineage, file-movement survival via aliases, semantic
+diff, trait/test extraction, nested modules, non-Rust files, Cargo.toml features/deps,
+index independence, exchange export of the semantic graph, and semantic context
+surviving a depth-1 Git clone.
 
 ### Phase 6 — Distributed Operation
 

@@ -1,6 +1,6 @@
 {
   "encver": 1,
-  "generated_at": 1787579192,
+  "generated_at": 1787595382,
   "generator": "gemel golden-gen",
   "schema": "gemel.golden.v1",
   "vectors": [
@@ -3292,6 +3292,120 @@
       "name": "extension-change",
       "references": {
         "producer-human": "producer.e590ad412e8a4924ab814f0cbeb14d0b99019a46f73de836ed112df3aac0388e"
+      },
+      "schemever": 1
+    },
+    {
+      "bytes": "vectors/semantic-entity-decode-name.gce.hex",
+      "constructed_from": {
+        "body": [
+          {
+            "name": "kind",
+            "tag": 1,
+            "value": "function"
+          },
+          {
+            "name": "name",
+            "tag": 2,
+            "value": "decode_name"
+          },
+          {
+            "name": "module_path",
+            "tag": 3,
+            "value": "crate::parser"
+          },
+          {
+            "name": "file_path",
+            "tag": 4,
+            "value": "src/parser.rs"
+          },
+          {
+            "name": "start_line",
+            "tag": 5,
+            "value": "1"
+          },
+          {
+            "name": "end_line",
+            "tag": 6,
+            "value": "42"
+          },
+          {
+            "name": "signature",
+            "tag": 7,
+            "value": "pub fn decode_name(data: &[u8]) -> String"
+          },
+          {
+            "name": "visibility",
+            "tag": 8,
+            "value": "public"
+          },
+          {
+            "name": "state",
+            "tag": 14,
+            "value": "state.d5506bfe077f5f54c665950017049569b36599b86f0b668fec1076859a36254d"
+          },
+          {
+            "name": "producer",
+            "tag": 15,
+            "value": "producer.fd8e2bc0eed941b331c8fa2dda3e075b7c1789000b7e06a82f0bc97f930331b8"
+          },
+          {
+            "name": "created_at",
+            "tag": 16,
+            "value": "0"
+          }
+        ],
+        "family": "semantic-entity",
+        "schemever": 1
+      },
+      "description": "function entity: decode_name with state and producer references",
+      "family": "semantic-entity",
+      "id": "vectors/semantic-entity-decode-name.id",
+      "name": "semantic-entity-decode-name",
+      "references": {
+        "producer-agent": "producer.fd8e2bc0eed941b331c8fa2dda3e075b7c1789000b7e06a82f0bc97f930331b8",
+        "state-basic": "state.d5506bfe077f5f54c665950017049569b36599b86f0b668fec1076859a36254d"
+      },
+      "schemever": 1
+    },
+    {
+      "bytes": "vectors/semantic-index-basic.gce.hex",
+      "constructed_from": {
+        "body": [
+          {
+            "name": "state",
+            "tag": 1,
+            "value": "state.d5506bfe077f5f54c665950017049569b36599b86f0b668fec1076859a36254d"
+          },
+          {
+            "name": "entities",
+            "tag": 2,
+            "value": [
+              "semantic-entity.a985cbf21499b60781d6526ba3c22d2e24e140ad8a4a3a120581d2cb68b74690"
+            ]
+          },
+          {
+            "name": "producer",
+            "tag": 3,
+            "value": "producer.fd8e2bc0eed941b331c8fa2dda3e075b7c1789000b7e06a82f0bc97f930331b8"
+          },
+          {
+            "name": "created_at",
+            "tag": 4,
+            "value": "0"
+          }
+        ],
+        "family": "semantic-index",
+        "schemever": 1
+      },
+      "description": "derived per-state index over one entity",
+      "family": "semantic-index",
+      "id": "vectors/semantic-index-basic.id",
+      "name": "semantic-index-basic",
+      "references": {
+        "producer-agent": "producer.fd8e2bc0eed941b331c8fa2dda3e075b7c1789000b7e06a82f0bc97f930331b8",
+        "semantic-entity-decode-name": "semantic-entity.a985cbf21499b60781d6526ba3c22d2e24e140ad8a4a3a120581d2cb68b74690",
+        "state-basic": "state.d5506bfe077f5f54c665950017049569b36599b86f0b668fec1076859a36254d"
       },
       "schemever": 1
     }

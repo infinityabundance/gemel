@@ -86,6 +86,9 @@ enum Command {
         b: Option<String>,
         #[arg(long)]
         stat: bool,
+        /// Semantic entity diff (Phase 5): added/removed/modified/moved.
+        #[arg(long)]
+        semantic: bool,
         #[arg(long, default_value_t = 3)]
         context: usize,
         #[arg(long)]
@@ -198,6 +201,23 @@ enum Command {
         /// Human summary (default: machine-generated).
         #[arg(long)]
         summary: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Build the semantic index of a state (Phase 5; index head by default).
+    Index {
+        /// State identity/name to index (default: the head state).
+        #[arg(long)]
+        state: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Show a semantic entity (or list current entities).
+    Semantic {
+        /// Entity name, `path::name`, `file:line`, or entity identity.
+        subject: Option<String>,
+        #[arg(long, default_value_t = 100)]
+        limit: usize,
         #[arg(long)]
         json: bool,
     },
@@ -500,6 +520,7 @@ fn run(cli: &Cli) -> Result<u8, Error> {
                         "severity": r.severity,
                         "disposition": r.disposition,
                     })).collect::<Vec<_>>(),
+                    "semantic": st.semantic_entities.map(|n| json!({ "entities": n })),
                     "readiness": st.readiness.as_str(),
                     "exchange": exchange_block,
                 });
@@ -560,6 +581,11 @@ fn run(cli: &Cli) -> Result<u8, Error> {
                     .count();
                 let total = st.claims.len();
                 println!("claims: {supported}/{total} supported");
+                if let Some(n) = st.semantic_entities {
+                    println!("semantic: {n} entities indexed");
+                } else if st.state.is_some() {
+                    println!("semantic: not indexed (gemel index)");
+                }
                 for r in &st.residuals {
                     println!("residual: {} [{}] {}", r.disposition, r.severity, r.summary);
                 }
@@ -832,10 +858,104 @@ fn run(cli: &Cli) -> Result<u8, Error> {
             a,
             b,
             stat,
+            semantic,
             context,
             json,
         } => {
             let repo = Repo::find(cli.repo.as_deref().unwrap_or(&std::env::current_dir()?))?;
+            if *semantic {
+                // Default range: the head change's input -> resulting state
+                // (what the latest change did semantically).
+                let head_change = repo.read_ref(gemel::store::REF_HEAD)?;
+                let (h_in, h_out) = match &head_change {
+                    Some(h) => {
+                        let obj = repo.load(h)?;
+                        let fs = obj.field_sequence().unwrap_or(&[]);
+                        (
+                            gemel::query::gid_field(fs, 0x03),
+                            gemel::query::gid_field(fs, 0x05),
+                        )
+                    }
+                    None => (None, None),
+                };
+                let sa = match a {
+                    Some(a) => gemel::query::resolve_state(&repo, a)?,
+                    None => h_in.or(repo.read_ref(REF_STATE_HEAD)?).ok_or_else(|| {
+                        Error::Invalid(
+                            "no input state to diff against; pass explicit states".into(),
+                        )
+                    })?,
+                };
+                let sb = match b {
+                    Some(b) => gemel::query::resolve_state(&repo, b)?,
+                    None => h_out.or(gemel::query::head_state(&repo)?).ok_or_else(|| {
+                        Error::Invalid("no head state to diff against; pass explicit states".into())
+                    })?,
+                };
+                let d = gemel::semantic::semantic_diff(&repo, &sa, &sb)?;
+                if *json {
+                    let info = |i: &gemel::semantic::EntityInfo| {
+                        json!({
+                            "id": i.id.map(|g| g.to_string()),
+                            "kind": i.kind,
+                            "name": i.name,
+                            "module_path": i.module_path,
+                            "file_path": i.file_path,
+                            "start_line": i.start_line,
+                            "end_line": i.end_line,
+                            "signature": i.signature,
+                            "visibility": i.visibility,
+                            "lineage": i.lineage.as_ref().map(|(f, e, c)| json!({
+                                "from": f.to_string(),
+                                "evidence": e,
+                                "certainty": c,
+                            })),
+                        })
+                    };
+                    print_json(
+                        "diff",
+                        json!({
+                            "semantic": {
+                                "state_a": sa.to_string(),
+                                "state_b": sb.to_string(),
+                                "unchanged": d.unchanged,
+                                "added": d.added.iter().map(info).collect::<Vec<_>>(),
+                                "removed": d.removed.iter().map(info).collect::<Vec<_>>(),
+                                "modified": d.modified.iter().map(|e| json!({
+                                    "before": e.before.as_ref().map(info),
+                                    "after": e.after.as_ref().map(info),
+                                })).collect::<Vec<_>>(),
+                                "moved": d.moved.iter().map(|e| json!({
+                                    "before": e.before.as_ref().map(info),
+                                    "after": e.after.as_ref().map(info),
+                                })).collect::<Vec<_>>(),
+                            }
+                        }),
+                    );
+                } else {
+                    println!("semantic diff {} -> {}", sa, sb);
+                    if d.unchanged > 0 {
+                        println!("unchanged: {} entity(ies)", d.unchanged);
+                    }
+                    for e in &d.moved {
+                        let b = e.before.as_ref().map(|i| i.full_path()).unwrap_or_default();
+                        let a = e.after.as_ref().map(|i| i.full_path()).unwrap_or_default();
+                        println!("moved: {b} -> {a}");
+                    }
+                    for e in &d.modified {
+                        let b = e.before.as_ref().map(|i| i.full_path()).unwrap_or_default();
+                        let a = e.after.as_ref().map(|i| i.full_path()).unwrap_or_default();
+                        println!("modified: {b} -> {a}");
+                    }
+                    for i in &d.added {
+                        println!("added: {} ({})", i.full_path(), i.file_path);
+                    }
+                    for i in &d.removed {
+                        println!("removed: {} ({})", i.full_path(), i.file_path);
+                    }
+                }
+                return Ok(0);
+            }
             match (a, b) {
                 (Some(a), Some(b)) => {
                     let sa = gemel::query::resolve_state(&repo, a)?;
@@ -1340,6 +1460,96 @@ fn run(cli: &Cli) -> Result<u8, Error> {
                 );
                 for s in &out.plan.continuation_scope {
                     println!("  next: {s}");
+                }
+            }
+            Ok(0)
+        }
+        Command::Index { state, json } => {
+            let repo = Repo::find(cli.repo.as_deref().unwrap_or(&std::env::current_dir()?))?;
+            let gid = match state {
+                Some(s) => gemel::query::resolve_state(&repo, s)?,
+                None => gemel::query::head_state(&repo)?.ok_or_else(|| {
+                    Error::Invalid("no head state to index; create a change first".into())
+                })?,
+            };
+            let producer = gemel::defaults::automation_producer_object_at(
+                gemel::semantic::INDEXER_PRODUCER_NAME,
+                0,
+            );
+            let producer_gid = gemel::content::object_identity(&repo, &producer)?;
+            let out = gemel::semantic::index_state(&repo, &gid, &producer_gid)?;
+            if *json {
+                print_json(
+                    "index",
+                    json!({
+                        "state": gid.to_string(),
+                        "index": out.index.to_string(),
+                        "entities": out.entities,
+                        "files": out.files,
+                        "new": out.new_entities,
+                        "modified": out.modified_entities,
+                        "moved": out.moved_entities,
+                        "lineage_links": out.lineage_links,
+                    }),
+                );
+            } else {
+                println!(
+                    "indexed {}: {} entity(ies) in {} file(s)",
+                    gid, out.entities, out.files
+                );
+                println!("  index: {}", out.index);
+                if out.lineage_links > 0 {
+                    println!(
+                        "  lineage: {} new, {} modified, {} moved ({} links)",
+                        out.new_entities,
+                        out.modified_entities,
+                        out.moved_entities,
+                        out.lineage_links
+                    );
+                }
+            }
+            Ok(0)
+        }
+        Command::Semantic {
+            subject,
+            limit,
+            json,
+        } => {
+            let repo = Repo::find(cli.repo.as_deref().unwrap_or(&std::env::current_dir()?))?;
+            match subject {
+                Some(subject) => {
+                    let resolved = gemel::semantic::resolve_subject(&repo, subject)?;
+                    let info = resolved.entity.ok_or_else(|| {
+                        Error::Invalid(format!(
+                            "no semantic entity matches {subject:?} (is the head state indexed?)"
+                        ))
+                    })?;
+                    if *json {
+                        print_json("semantic", entity_json(&info));
+                    } else {
+                        render_entity(&info);
+                    }
+                }
+                None => {
+                    let entities = gemel::semantic::current_entities(&repo)?.unwrap_or_default();
+                    let entities = entities
+                        .into_iter()
+                        .take(*limit)
+                        .filter_map(|(gid, _)| gemel::semantic::entity_info(&repo, &gid).ok())
+                        .collect::<Vec<_>>();
+                    if *json {
+                        print_json(
+                            "semantic",
+                            json!({"entities": entities.iter().map(entity_json).collect::<Vec<_>>()}),
+                        );
+                    } else {
+                        for e in &entities {
+                            println!("{}  {}  {}", e.kind, e.full_path(), e.file_path);
+                        }
+                        if entities.is_empty() {
+                            println!("no indexed entities (run gemel index)");
+                        }
+                    }
                 }
             }
             Ok(0)
@@ -2087,6 +2297,29 @@ fn render_human(repo: &Repo, gid: &Gid, obj: &Object, name: Option<&str>) -> Res
                 println!("  to: {to}");
             }
         }
+        gemel::family::Family::SemanticEntity => {
+            println!("semantic entity {}", gid);
+            println!(
+                "  {} {}::{}\n  {}:{}..{}  {}",
+                sfield(0x01),
+                sfield(0x03),
+                sfield(0x02),
+                sfield(0x04),
+                gemel::query::u64_field(fs, 0x05).unwrap_or(0),
+                gemel::query::u64_field(fs, 0x06).unwrap_or(0),
+                sfield(0x07)
+            );
+            if let Some(from) = gfield(0x0A) {
+                println!("  lineage from {from} ({} {})", sfield(0x0B), sfield(0x0C));
+            }
+        }
+        gemel::family::Family::SemanticIndex => {
+            println!("semantic index {}", gid);
+            if let Some(s) = gfield(0x01) {
+                println!("  state: {s}");
+            }
+            println!("  entities: {}", glist(0x02).len());
+        }
     }
     Ok(())
 }
@@ -2261,10 +2494,51 @@ fn why_json(report: &gemel::query::WhyReport) -> serde_json::Value {
     });
     json!({
         "subject": report.subject,
+        "semantic": report.semantic.as_ref().map(entity_json),
         "introduced_by": introduced,
         "last_modified": report.last_modified.map(|g| g.to_string()),
         "previous_approaches": report.previous_approaches.iter().map(attempt_json).collect::<Vec<_>>(),
     })
+}
+
+/// A semantic entity as JSON (Phase 5; AGENT_PROTOCOL.md §5.9).
+fn entity_json(e: &gemel::semantic::EntityInfo) -> serde_json::Value {
+    json!({
+        "id": e.id.map(|g| g.to_string()),
+        "kind": e.kind,
+        "name": e.name,
+        "module_path": e.module_path,
+        "full_path": e.full_path(),
+        "file_path": e.file_path,
+        "start_line": e.start_line,
+        "end_line": e.end_line,
+        "signature": e.signature,
+        "visibility": e.visibility,
+        "lineage": e.lineage.as_ref().map(|(from, evidence, certainty)| json!({
+            "from": from.to_string(),
+            "evidence": evidence,
+            "certainty": certainty,
+        })),
+        "state": e.state.to_string(),
+    })
+}
+
+/// Human rendering of a semantic entity.
+fn render_entity(e: &gemel::semantic::EntityInfo) {
+    println!("{} {}", e.kind, e.full_path());
+    if !e.file_path.is_empty() {
+        println!("  file: {}:{}:{}", e.file_path, e.start_line, e.end_line);
+    }
+    if !e.signature.is_empty() {
+        println!("  signature: {}", e.signature);
+    }
+    println!("  visibility: {}", e.visibility);
+    if let Some((from, evidence, certainty)) = &e.lineage {
+        println!("  lineage: from {from} ({certainty}; {evidence})");
+    }
+    if let Some(id) = e.id {
+        println!("  id: {id}");
+    }
 }
 
 fn attempt_json(a: &gemel::query::AttemptSummary) -> serde_json::Value {
@@ -2284,6 +2558,12 @@ fn attempt_json(a: &gemel::query::AttemptSummary) -> serde_json::Value {
 /// Human rendering of `why` (brief §14).
 fn render_why(repo: &Repo, report: &gemel::query::WhyReport) -> Result<(), Error> {
     println!("subject: {}", report.subject);
+    if let Some(e) = &report.semantic {
+        println!("entity: {} ({})", e.full_path(), e.kind);
+        if let Some((from, evidence, certainty)) = &e.lineage {
+            println!("  lineage: from {from} ({certainty}; {evidence})");
+        }
+    }
     if let Some(n) = &report.introduced_by {
         println!(
             "introduced by {} ({})",

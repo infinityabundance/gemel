@@ -70,7 +70,9 @@ fn main() {
             if old_hex != want_hex || old_id != want_id {
                 changed.push(e.name);
             }
-        } else if hex_path.exists() != id_path.exists() {
+        } else if !hex_path.exists() || !id_path.exists() {
+            // Missing (or half-written) vector files count as changes so new
+            // fixtures are always pinned.
             changed.push(e.name);
         }
     }

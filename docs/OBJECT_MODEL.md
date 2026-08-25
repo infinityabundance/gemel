@@ -902,6 +902,57 @@ fabricated: ARRAY<STRING> — **must be empty** (invariant: Gemel never fabricat
 Invariants: mapping objects make Git interchange deterministic and auditable
 (GIT_INTEROP.md §2). `from` is a string exactly as the external system writes it.
 
+### 6.23 `semantic-entity` — code 0x17, schemever 1, Ext: yes
+
+A deterministically derived declaration identity (Phase 5; brief §22–§24). Entities
+are **derived facts** — deterministic scanner output over observed source bytes — never
+model-confidence or natural-language truth. Permanent semantic identity is never
+silently inferred from heuristics: a changed or moved entity becomes a new object
+linked to its predecessor by explicit lineage.
+
+| Tag | Field | Type | Req | Description / Invariants |
+|---|---|---|---|---|
+| 0x01 | kind | STRING enum | ✓ | `module` `type` `trait` `impl` `function` `method` `constant` `static` `test` `feature` `dependency` `other` |
+| 0x02 | name | STRING | ✓ | Declared name (for `impl Trait for Type`, `Trait for Type`) |
+| 0x03 | module_path | STRING | ✓ | `crate::parser`-style path (file-derived + inline modules) |
+| 0x04 | file_path | STRING | | Repository-relative source path |
+| 0x05 | start_line | U64 | | 1-based; 0 = unknown |
+| 0x06 | end_line | U64 | | 1-based, inclusive; 0 = unknown |
+| 0x07 | signature | STRING | | Item header (keyword…body-open or `;`), whitespace-collapsed, capped |
+| 0x08 | visibility | STRING enum | | `public` `crate` `private` `unknown` |
+| 0x09 | parent | GID(entity) | | Containing entity (reserved; not yet populated) |
+| 0x0A | lineage_from | GID(entity) | | Predecessor entity (edit/move predecessor) |
+| 0x0B | lineage_evidence | STRING | | Why the lineage is claimed: `same-name-kind-path` (observed) or `similarity:same-name-kind` (possible) |
+| 0x0C | lineage_certainty | STRING enum | | `observed` `possible` `unknown` |
+| 0x0D | dependencies | ARRAY<GID(entity)> | | Resolved semantic dependencies (reserved; not yet populated) |
+| 0x0E | state | GID(state) | | The state the entity was derived from |
+| 0x0F | producer | GID(producer) | | The deterministic indexer (`semantic-indexer`), published on first use |
+| 0x10 | created_at | SINT | | 0 for derived entities (determinism: derivation time is not identity) |
+
+Invariants: an entity's identity is the content hash of its full description, so an
+unchanged declaration deduplicates across states and re-derivation is byte-identical.
+`lineage_from` is written **only** with a documented evidence string and certainty;
+module renames and file moves yield `possible`, never a silent merge. The entity object
+must never reference an unpublished producer (fsck reachability).
+
+### 6.24 `semantic-index` — code 0x18, schemever 1, Ext: yes
+
+The per-state grouping of derived entities (Phase 5). A disposable accelerator in the
+spirit of the SQLite index: the canonical objects + refs are truth; deleting and
+rebuilding an index must never change query answers.
+
+| Tag | Field | Type | Req | Description / Invariants |
+|---|---|---|---|---|
+| 0x01 | state | GID(state) | ✓ | The indexed state |
+| 0x02 | entities | ARRAY<GID(entity)> | ✓ | Deterministic entity order (module_path, kind, name, file_path, start_line) |
+| 0x03 | producer | GID(producer) | | The deterministic indexer |
+| 0x04 | created_at | SINT | | 0 (deterministic) |
+
+Refs: `refs/semantic/state/<state-hex>` per state, `refs/semantic/current` (most recent
+build), `refs/semantic/head` (the head state's index). The exchange frontier seeds
+`refs/semantic/head` and ingestion re-establishes the refs on activation, so a fresh
+Git clone recovers identical semantic identities (EXCHANGE.md §11, §56).
+
 ---
 
 ## 7. Graph Semantics
@@ -925,6 +976,8 @@ References (GID fields) form a directed graph over objects. Canonical edge kinds
 | composition | tree | tree/blob | Merkle content |
 | reconciliation | reconciliation | trajectories, changes, residuals | inputs/outcomes |
 | mapping | mapping | any | external correspondence |
+| lineage | semantic-entity | semantic-entity (lineage_from) | explicit predecessor (evidence + certainty) |
+| derivation | semantic-index | semantic-entity | entities derived from a state |
 
 ### 7.2 Acyclicity and structure
 

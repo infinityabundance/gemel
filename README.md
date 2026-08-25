@@ -18,8 +18,9 @@ deterministically encoded object model implemented in native Rust.
 
 ## Status
 
-**Phase 4 — Git Interchange — complete.** Next: Phase 5 (Semantic Depth).
+**Phase 5 — Semantic Depth — complete.** Next: Phase 6 (Distributed Operation).
 
+**Phase 4 — Git Interchange — complete.**
 **Phase 1.5 — Git-Carried Exchange Rollups — complete.**
 
 **Phase 3 — Reconciliation — complete.**
@@ -34,7 +35,7 @@ deterministically encoded object model implemented in native Rust.
   INVARIANTS, GIT_INTEROP, AGENT_PROTOCOL, THREAT_MODEL.
 - Canonical encoding (GCE): deterministic, fail-closed, extension-preserving binary
   grammar (the `gemel` crate, `src/`).
-- BLAKE3-256 object identity; twenty-two object families specified field-by-field.
+- BLAKE3-256 object identity; twenty-four object families specified field-by-field.
 - Executable golden fixtures (`golden/`) pinning canonical bytes and identities, with a
   regeneration policy.
 
@@ -136,6 +137,30 @@ through ordinary Git infrastructure without reducing Gemel to Git's ontology:
   (re-import into the originating repository re-links the original objects).
 - 9 courts in `tests/git_interop_tests.rs` using real Git repositories.
 
+**Phase 5 delivers language-aware semantic depth** (OBJECT_MODEL.md §6.23–§6.24;
+brief §22–§24, §13):
+
+- Two new canonical families — `semantic-entity` and `semantic-index` — published by
+  `gemel index` (deterministic; unchanged entities deduplicate by content identity).
+- A deterministic lexical Rust extractor (`src/semantic/rust.rs`): strings, raw
+  strings, char literals, line/nested-block comments, attributes, lifetimes,
+  generics; `pub fn`/`struct`/`enum`/`union`/`trait`/`impl Trait for Type`/`mod`
+  (inline + file)/`const`/`static`/`use`/`macro_rules`/`extern "C" fn`/`type`
+  aliases; nested inline modules.
+- **Explicit lineage, never inferred identity**: edited entities link
+  `lineage_from` with certainty `observed` (`same-name-kind-path`); moved entities
+  link with certainty `possible` (`similarity:same-name-kind`) and a documented
+  evidence string. Semantic identity survives file movement without silent merges.
+- `gemel semantic <subject>` — resolve entities by name, `path::name`, `file:line`,
+  or identity; `gemel diff --semantic` — added/removed/modified/moved entities with
+  body-digest detection of edits; `gemel why`/`attempts` — resolve semantic subjects
+  and match across lineage aliases so moved entities surface the work that touched
+  their ancestors.
+- The indexer producer is published, fsck stays clean, and the exchange frontier
+  carries the semantic graph: a depth-1 `git clone` + `gemel status --json`
+  re-establishes `refs/semantic/*` over the imported objects with **identical
+  identities** (12 courts in `tests/phase5_tests.rs`).
+
 ## Reading order
 
 1. `docs/SPECIFICATION.md` — purpose, principles, architecture, conformance matrices.
@@ -173,7 +198,7 @@ src/                    the single `gemel` crate
     └── golden-gen.rs   golden vector generator
 golden/                 pinned golden vectors (canonical bytes + identities)
 docs/                   the normative specification set
-tests/                  Phase 1 + 2 + 3 + 1.5 integration suites (the acceptance demos)
+tests/                  Phase 1 + 2 + 3 + 1.5 + 4 + 5 integration suites (the acceptance demos)
 ```
 
 Layering is disciplined within the crate: primitives → encoding → schema → fixtures →

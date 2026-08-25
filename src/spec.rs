@@ -190,6 +190,21 @@ pub static ENUM_INTERACTION_KIND: &[&str] = &[
     "verification",
 ];
 pub static ENUM_CERTAINTY: &[&str] = &["observed", "possible", "unknown"];
+pub static ENUM_ENTITY_KIND: &[&str] = &[
+    "module",
+    "type",
+    "trait",
+    "impl",
+    "function",
+    "method",
+    "constant",
+    "static",
+    "test",
+    "feature",
+    "dependency",
+    "other",
+];
+pub static ENUM_VISIBILITY: &[&str] = &["public", "crate", "private", "unknown"];
 pub static ENUM_MAPPING_KIND: &[&str] = &["git_commit", "git_tree", "external"];
 pub static ENUM_RETENTION_POLICY: &[&str] = &[
     "retain_forever",
@@ -231,6 +246,8 @@ pub static TY_CONTEXT_MANIFEST: Type = Type::Gid(Family::ContextManifest);
 pub static TY_CHECKPOINT: Type = Type::Gid(Family::Checkpoint);
 pub static TY_CONFIG: Type = Type::Gid(Family::Config);
 pub static TY_MAPPING: Type = Type::Gid(Family::Mapping);
+pub static TY_SEMANTIC_ENTITY: Type = Type::Gid(Family::SemanticEntity);
+pub static TY_SEMANTIC_INDEX: Type = Type::Gid(Family::SemanticIndex);
 
 pub static TY_ARR_STR: Type = Type::Array(&TY_STR);
 pub static TY_ARR_GID: Type = Type::Array(&TY_GID_ANY);
@@ -952,6 +969,47 @@ pub static MAPPING_SPEC: [FieldSpec; 6] = [
     FieldSpec::new(0x06, "created_at", Type::I64, false),
 ];
 
+/// semantic-entity (OBJECT_MODEL.md §6.23). A language-level entity observed
+/// in a source file at a recorded span. Identity is content-addressed over
+/// the full canonical description; file movement and edits create new entity
+/// objects linked by explicit lineage (never silently merged).
+pub static SEMANTIC_ENTITY_SPEC: [FieldSpec; 16] = [
+    FieldSpec::new(0x01, "kind", Type::Enum(ENUM_ENTITY_KIND), true),
+    FieldSpec::new(0x02, "name", Type::Str, true),
+    FieldSpec::new(0x03, "module_path", Type::Str, true),
+    FieldSpec::new(0x04, "file_path", Type::Str, false),
+    FieldSpec::new(0x05, "start_line", Type::U64, false),
+    FieldSpec::new(0x06, "end_line", Type::U64, false),
+    FieldSpec::new(0x07, "signature", Type::Str, false),
+    FieldSpec::new(0x08, "visibility", Type::Enum(ENUM_VISIBILITY), false),
+    FieldSpec::new(0x09, "parent", Type::Gid(Family::SemanticEntity), false),
+    FieldSpec::new(
+        0x0A,
+        "lineage_from",
+        Type::Gid(Family::SemanticEntity),
+        false,
+    ),
+    FieldSpec::new(0x0B, "lineage_evidence", Type::Str, false),
+    FieldSpec::new(0x0C, "lineage_certainty", Type::Enum(ENUM_CERTAINTY), false),
+    FieldSpec::new(
+        0x0D,
+        "dependencies",
+        Type::Array(&TY_SEMANTIC_ENTITY),
+        false,
+    ),
+    FieldSpec::new(0x0E, "state", Type::Gid(Family::State), false),
+    FieldSpec::new(0x0F, "producer", Type::Gid(Family::Producer), false),
+    FieldSpec::new(0x10, "created_at", Type::I64, false),
+];
+
+/// semantic-index (OBJECT_MODEL.md §6.24). The derived per-state entity index.
+pub static SEMANTIC_INDEX_SPEC: [FieldSpec; 4] = [
+    FieldSpec::new(0x01, "state", Type::Gid(Family::State), true),
+    FieldSpec::new(0x02, "entities", Type::Array(&TY_SEMANTIC_ENTITY), true),
+    FieldSpec::new(0x03, "producer", Type::Gid(Family::Producer), false),
+    FieldSpec::new(0x04, "created_at", Type::I64, false),
+];
+
 // ---------------------------------------------------------------------------
 // Family schema registry.
 // ---------------------------------------------------------------------------
@@ -1088,6 +1146,18 @@ static SCHEMA_MAPPING: FamilySchema = FamilySchema {
     extensions_allowed: true,
     fields: &MAPPING_SPEC,
 };
+static SCHEMA_SEMANTIC_ENTITY: FamilySchema = FamilySchema {
+    family: Family::SemanticEntity,
+    schemever: 1,
+    extensions_allowed: true,
+    fields: &SEMANTIC_ENTITY_SPEC,
+};
+static SCHEMA_SEMANTIC_INDEX: FamilySchema = FamilySchema {
+    family: Family::SemanticIndex,
+    schemever: 1,
+    extensions_allowed: true,
+    fields: &SEMANTIC_INDEX_SPEC,
+};
 
 /// Returns the schema for a family, or `None` for an unknown family.
 pub fn schema_for(family: Family) -> &'static FamilySchema {
@@ -1114,11 +1184,13 @@ pub fn schema_for(family: Family) -> &'static FamilySchema {
         Family::Checkpoint => &SCHEMA_CHECKPOINT,
         Family::Config => &SCHEMA_CONFIG,
         Family::Mapping => &SCHEMA_MAPPING,
+        Family::SemanticEntity => &SCHEMA_SEMANTIC_ENTITY,
+        Family::SemanticIndex => &SCHEMA_SEMANTIC_INDEX,
     }
 }
 
 /// All schemas, in code order (conformance tests).
-pub fn all_schemas() -> [&'static FamilySchema; 22] {
+pub fn all_schemas() -> [&'static FamilySchema; 24] {
     [
         &SCHEMA_BLOB,
         &SCHEMA_TREE,
@@ -1142,6 +1214,8 @@ pub fn all_schemas() -> [&'static FamilySchema; 22] {
         &SCHEMA_CHECKPOINT,
         &SCHEMA_CONFIG,
         &SCHEMA_MAPPING,
+        &SCHEMA_SEMANTIC_ENTITY,
+        &SCHEMA_SEMANTIC_INDEX,
     ]
 }
 

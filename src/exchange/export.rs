@@ -69,6 +69,12 @@ pub fn collect_export_objects(repo: &Repo, profile: Profile) -> Result<Vec<(Gid,
     if let Some(c) = repo.read_ref(crate::store::REF_CONFIG)? {
         queue.push(c);
     }
+    // The semantic index of the head state (Phase 5): the frontier profile
+    // carries the current semantic knowledge graph so a fresh agent inherits
+    // entity context after an ordinary clone (EXCHANGE.md §11, §56).
+    if let Some(i) = repo.read_ref(crate::semantic::REF_SEMANTIC_HEAD)? {
+        queue.push(i);
+    }
     while let Some(id) = queue.pop() {
         if !seen.insert(id) {
             continue;

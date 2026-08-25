@@ -1126,6 +1126,37 @@ fn build_extension_change(ctx: &mut FixtureCtx) -> Object {
     )
 }
 
+fn build_semantic_entity_decode_name(ctx: &mut FixtureCtx) -> Object {
+    obj(
+        Family::SemanticEntity,
+        vec![
+            f(0x01, s("function")),
+            f(0x02, s("decode_name")),
+            f(0x03, s("crate::parser")),
+            f(0x04, s("src/parser.rs")),
+            f(0x05, u(1)),
+            f(0x06, u(42)),
+            f(0x07, s("pub fn decode_name(data: &[u8]) -> String")),
+            f(0x08, s("public")),
+            f(0x0E, g(ctx.gid("state-basic"))),
+            f(0x0F, g(ctx.gid("producer-agent"))),
+            f(0x10, i(0)),
+        ],
+    )
+}
+
+fn build_semantic_index_basic(ctx: &mut FixtureCtx) -> Object {
+    obj(
+        Family::SemanticIndex,
+        vec![
+            f(0x01, g(ctx.gid("state-basic"))),
+            f(0x02, arr(vec![g(ctx.gid("semantic-entity-decode-name"))])),
+            f(0x03, g(ctx.gid("producer-agent"))),
+            f(0x04, i(0)),
+        ],
+    )
+}
+
 // ---------------------------------------------------------------------------
 // Fixture table (dependency order).
 // ---------------------------------------------------------------------------
@@ -1355,5 +1386,15 @@ static FIXTURES: &[Fixture] = &[
         name: "extension-change",
         description: "change with an extension field (lossless retention)",
         build: build_extension_change,
+    },
+    Fixture {
+        name: "semantic-entity-decode-name",
+        description: "function entity: decode_name with state and producer references",
+        build: build_semantic_entity_decode_name,
+    },
+    Fixture {
+        name: "semantic-index-basic",
+        description: "derived per-state index over one entity",
+        build: build_semantic_index_basic,
     },
 ];

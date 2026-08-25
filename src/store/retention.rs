@@ -36,7 +36,9 @@ pub fn default_tier(family: Family) -> u8 {
         | Family::ContextManifest
         | Family::Checkpoint
         | Family::Config
-        | Family::Mapping => TIER_0_CANONICAL,
+        | Family::Mapping
+        | Family::SemanticEntity
+        | Family::SemanticIndex => TIER_0_CANONICAL,
         Family::Evidence => TIER_0_CANONICAL, // evidence *identities* are canonical
     }
 }

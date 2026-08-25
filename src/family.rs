@@ -1,11 +1,12 @@
 //! The object family table.
 //!
 //! Families are fixed, versioned object types encoded in the envelope
-//! (OBJECT_MODEL.md §6). Phase 0 defines twenty-two families at schemever 1.
+//! (OBJECT_MODEL.md §6). Phase 0 defines twenty-two families at schemever 1;
+//! Phase 5 adds the semantic layer (`semantic-entity`, `semantic-index`).
 
 use std::fmt;
 
-/// The twenty-two canonical object families.
+/// The twenty-four canonical object families.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[repr(u8)]
 pub enum Family {
@@ -31,11 +32,15 @@ pub enum Family {
     Checkpoint = 0x14,
     Config = 0x15,
     Mapping = 0x16,
+    /// A language-level entity observed in a source file (Phase 5).
+    SemanticEntity = 0x17,
+    /// The derived per-state semantic index (Phase 5).
+    SemanticIndex = 0x18,
 }
 
 impl Family {
     /// All families in code order (used for iteration and conformance tests).
-    pub const ALL: [Family; 22] = [
+    pub const ALL: [Family; 24] = [
         Family::Blob,
         Family::Tree,
         Family::State,
@@ -58,6 +63,8 @@ impl Family {
         Family::Checkpoint,
         Family::Config,
         Family::Mapping,
+        Family::SemanticEntity,
+        Family::SemanticIndex,
     ];
 
     /// The family code byte used in the envelope and in binary references.
@@ -95,6 +102,8 @@ impl Family {
             Family::Checkpoint => "checkpoint",
             Family::Config => "config",
             Family::Mapping => "mapping",
+            Family::SemanticEntity => "semantic-entity",
+            Family::SemanticIndex => "semantic-index",
         }
     }
 
@@ -128,6 +137,8 @@ impl Family {
             Family::Checkpoint => "checkpoint",
             Family::Config => "config",
             Family::Mapping => "mapping",
+            Family::SemanticEntity => "semantic entity",
+            Family::SemanticIndex => "semantic index",
         }
     }
 
@@ -168,9 +179,10 @@ mod tests {
             assert_eq!(Family::from_code(f.code()), Some(f));
             assert_eq!(Family::parse_short(f.short()), Some(f));
         }
-        assert_eq!(Family::ALL.len(), 22);
+        assert_eq!(Family::ALL.len(), 24);
         assert_eq!(Family::from_code(0x00), None);
-        assert_eq!(Family::from_code(0x17), None);
+        assert_eq!(Family::from_code(0x19), None);
+        assert_eq!(Family::from_code(0x17), Some(Family::SemanticEntity));
         assert_eq!(Family::parse_short("blob"), Some(Family::Blob));
         assert_eq!(
             Family::parse_short("context-manifest"),

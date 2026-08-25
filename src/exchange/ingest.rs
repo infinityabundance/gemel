@@ -12,7 +12,7 @@ use crate::store::refs::{RefOp, RefTransaction};
 use crate::store::{
     Error, InitOptions, Repo, REF_CONFIG, REF_HEAD, REF_NAMES, REF_STATE_HEAD, REF_TRAJECTORIES,
 };
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::path::Path;
 
 /// The ref namespace for imported frontiers.
@@ -45,6 +45,18 @@ pub struct IngestOutcome {
     /// the imported config instead of the init-time default; EXCHANGE.md
     /// §17).
     pub imported_config: Option<String>,
+    /// The semantic index of the activated state, when the imported
+    /// frontier carried exactly one (Phase 5; refs/semantic re-established
+    /// over the imported derived objects).
+    pub semantic_index: Option<String>,
+}
+
+/// Mutable accumulators threaded through an ingestion pass.
+struct IngestAccum {
+    total_bytes: u64,
+    promoted_config: Option<Gid>,
+    processed_packs: HashMap<String, bool>,
+    imported_indexes: Vec<(Gid, Gid)>,
 }
 
 /// Quarantine-validates and promotes every pack referenced by a frontier and
@@ -57,9 +69,7 @@ fn ingest_frontier_objects(
     meta: &Path,
     root_frontier: &Frontier,
     limits: &ExchangeLimits,
-    total_bytes: &mut u64,
-    promoted_config: &mut Option<Gid>,
-    processed_packs: &mut HashMap<String, bool>,
+    accum: &mut IngestAccum,
 ) -> Result<usize, Error> {
     // Iterative DFS over the parent chain; depth is tracked explicitly so a
     // malicious chain fails with a structured limit error, never a stack
@@ -109,7 +119,7 @@ fn ingest_frontier_objects(
         for pack_hex in &frame.frontier.packs {
             let pack_id = super::hex_to_digest(pack_hex)
                 .ok_or_else(|| Error::Invalid(format!("malformed pack id {pack_hex:?}")))?;
-            if processed_packs.contains_key(pack_hex) {
+            if accum.processed_packs.contains_key(pack_hex) {
                 continue;
             }
             let path = super::pack_path(meta, &pack_id);
@@ -117,12 +127,12 @@ fn ingest_frontier_objects(
                 .map_err(|_| Error::Invalid(format!("referenced pack {pack_hex} is missing")))?;
             // Automatic ingestion is bounded (EXCHANGE.md §11, §37): a hostile
             // descriptor cannot force unbounded reads during `gemel status`.
-            *total_bytes += bytes.len() as u64;
-            if *total_bytes > limits.max_automatic_ingest_bytes {
+            accum.total_bytes += bytes.len() as u64;
+            if accum.total_bytes > limits.max_automatic_ingest_bytes {
                 return Err(Error::Limit {
                     kind: "exchange automatic ingest (IMPORT_REQUIRES_EXPLICIT_APPROVAL)",
                     limit: limits.max_automatic_ingest_bytes,
-                    found: *total_bytes,
+                    found: accum.total_bytes,
                 });
             }
             if super::pack_id(&bytes) != pack_id {
@@ -134,7 +144,7 @@ fn ingest_frontier_objects(
             for o in objects {
                 pending.push((o.id, o.envelope));
             }
-            processed_packs.insert(pack_hex.clone(), true);
+            accum.processed_packs.insert(pack_hex.clone(), true);
         }
     }
     // Promote after the entire frontier closure validated: verify id↔bytes
@@ -145,12 +155,25 @@ fn ingest_frontier_objects(
     // as a HashCollision (EXCHANGE.md §42).
     let mut total = 0usize;
     for (id, envelope) in &pending {
-        if id.family() == crate::family::Family::Config && promoted_config.is_none() {
-            *promoted_config = Some(*id);
+        if id.family() == crate::family::Family::Config && accum.promoted_config.is_none() {
+            accum.promoted_config = Some(*id);
         }
         // insert_bytes validates, hashes, publishes, and fails on
         // id↔bytes conflicts with local native objects.
         repo.insert_bytes(envelope)?;
+        if id.family() == crate::family::Family::SemanticIndex {
+            // Remember (state, index) pairs so the activated frontier can
+            // re-establish the semantic refs over the imported objects
+            // (the index is derived knowledge carried by the frontier;
+            // EXCHANGE.md §11, §56).
+            if let Ok(obj) = repo.load(id) {
+                if let Some(fs) = obj.field_sequence() {
+                    if let Some(state) = crate::query::gid_field(fs, 0x01) {
+                        accum.imported_indexes.push((state, *id));
+                    }
+                }
+            }
+        }
         total += 1;
     }
     Ok(total)
@@ -178,6 +201,15 @@ pub fn ingest_with_limits(repo: &Repo, limits: &ExchangeLimits) -> Result<Ingest
         diverged: Vec::new(),
         activated: None,
         imported_config: None,
+        semantic_index: None,
+    };
+    // (state, index) pairs of SemanticIndex objects promoted from packs,
+    // plus the other accumulators threaded through the frontier closure.
+    let mut accum = IngestAccum {
+        total_bytes: 0,
+        promoted_config: None,
+        processed_packs: HashMap::new(),
+        imported_indexes: Vec::new(),
     };
     // Current source content state (carrier-backed recovery of current blobs
     // happens inside build_state).
@@ -199,22 +231,11 @@ pub fn ingest_with_limits(repo: &Repo, limits: &ExchangeLimits) -> Result<Ingest
             continue;
         }
         require_supported_schemas(frontier)?;
-        let mut processed_packs: HashMap<String, bool> = HashMap::new();
-        let mut total_bytes: u64 = 0;
-        let mut promoted_config: Option<Gid> = None;
-        let promoted = ingest_frontier_objects(
-            repo,
-            &meta,
-            frontier,
-            limits,
-            &mut total_bytes,
-            &mut promoted_config,
-            &mut processed_packs,
-        )?;
-        if let Some(cfg) = promoted_config {
+        let promoted = ingest_frontier_objects(repo, &meta, frontier, limits, &mut accum)?;
+        if let Some(cfg) = accum.promoted_config.take() {
             frontier_configs.insert(crate::hex::encode(id), cfg);
         }
-        outcome.packs_processed += processed_packs.len();
+        outcome.packs_processed += accum.processed_packs.len();
         outcome.objects_promoted += promoted;
         // Register the imported frontier ref (head change), restore human
         // names over the immutable identities, then mark local.
@@ -267,6 +288,32 @@ pub fn ingest_with_limits(repo: &Repo, limits: &ExchangeLimits) -> Result<Ingest
                 // The imported context becomes the active frontier locally.
                 super::export::record_active_frontier(&meta, id)?;
                 outcome.activated = Some(crate::hex::encode(id));
+                // Re-establish the semantic refs when the imported frontier
+                // carried exactly one index for this state. If several
+                // distinct indexes claim the same state (divergent derived
+                // histories), none is activated: `gemel index` rebuilds
+                // deterministically instead of guessing (Phase 5; EXCHANGE.md
+                // §42: never prefer one conflicting representation).
+                let candidates: BTreeSet<Gid> = accum
+                    .imported_indexes
+                    .iter()
+                    .filter(|(s, _)| *s == state)
+                    .map(|(_, i)| *i)
+                    .collect();
+                if candidates.len() == 1 {
+                    let index = *candidates.iter().next().unwrap();
+                    let state_hex = crate::hex::encode(state.digest());
+                    let sop = vec![
+                        RefOp::set(&format!("refs/semantic/state/{state_hex}"), index),
+                        RefOp::set("refs/semantic/current", index),
+                        RefOp::set("refs/semantic/head", index),
+                    ];
+                    repo.with_write_lock(|| {
+                        repo.apply_refs_unlocked(&RefTransaction { ops: sop })?;
+                        Ok(())
+                    })?;
+                    outcome.semantic_index = Some(index.to_string());
+                }
                 break; // exactly one active frontier
             }
         }

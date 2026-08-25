@@ -196,6 +196,11 @@ current code → Change → Intent → Claim → Evidence → Residual → Decis
 The traversal is a bounded typed query (indexes: change-by-subject, claim-by-subject,
 claim→evidence edges), never a prose search.
 
+Phase 5: when the subject resolves to a semantic entity, `why` walks the entity's
+**lineage aliases** (current and ancestor file paths, module paths, names) so a moved
+or renamed entity surfaces every change that touched its ancestors; the report
+carries the resolved entity under `semantic` (§5.16).
+
 ### 5.3 `claims [--subject X] [--status S]`
 
 ```json
@@ -356,6 +361,63 @@ Compares two agent runs via their context manifests (brief §19):
 
 `log` lists changes/episodes/operations at the requested resolution (brief §3);
 `show <id> --json` returns the canonical form (§3.1).
+
+### 5.15 `index [--state <id>]`
+
+Builds (or rebuilds) the semantic index of a state (default: the head state).
+Deterministic: identical state bytes produce identical entity objects and the
+identical index object; unchanged entities deduplicate by content identity.
+The index is disposable — canonical objects + refs are truth, and deleting or
+rebuilding the index never changes query answers (brief §2).
+
+```json
+{
+  "schema": "gemel.query.v1",
+  "request": {"command": "index", "params": {"state": "state.…"}},
+  "result": {
+    "state": "state.…",
+    "index": "semantic-index.…",
+    "entities": 12,
+    "files": 3,
+    "new": 5, "modified": 4, "moved": 2, "lineage_links": 6
+  },
+  "omitted": [],
+  "uncertainty": []
+}
+```
+
+### 5.16 `semantic [<subject>]`
+
+With a subject: resolves an entity by name, `path::name`, `file:line`, or
+`semantic-entity` identity and returns its full description, including the
+**explicit lineage** (`lineage_from`, `lineage_evidence`, `lineage_certainty`
+∈ `observed` | `possible` | `unknown`) — a permanent semantic identity is never
+silently inferred (brief §22). Without a subject: lists the current index's
+entities (bounded).
+
+```json
+{
+  "schema": "gemel.query.v1",
+  "request": {"command": "semantic", "params": {"subject": "decode_name"}},
+  "result": {
+    "id": "semantic-entity.…",
+    "kind": "function",
+    "name": "decode_name",
+    "module_path": "crate::parser",
+    "full_path": "crate::parser::decode_name",
+    "file_path": "src/parser.rs",
+    "start_line": 1, "end_line": 3,
+    "signature": "pub fn decode_name(data: &[u8]) -> String",
+    "visibility": "public",
+    "lineage": {"from": "semantic-entity.…",
+                "evidence": "similarity:same-name-kind",
+                "certainty": "possible"},
+    "state": "state.…"
+  },
+  "omitted": [],
+  "uncertainty": []
+}
+```
 
 ---
 

@@ -342,6 +342,10 @@ pub struct Status {
     pub claims: Vec<ClaimSummary>,
     pub residuals: Vec<ResidualSummary>,
     pub evidence_count: usize,
+    /// The semantic entity count of the head state, when indexed (Phase 5).
+    /// `None` means the head state is not indexed (the disposable index is an
+    /// accelerator; status never builds it implicitly).
+    pub semantic_entities: Option<usize>,
     pub readiness: Readiness,
 }
 
@@ -377,6 +381,21 @@ pub fn status(repo: &Repo) -> Result<Status, Error> {
     };
     st.state = base_state;
     st.changed = crate::content::working_tree_delta(repo, base_state.as_ref(), &ignore)?;
+
+    // Semantic index presence (Phase 5): the head state's entity count when
+    // an index exists. The index is disposable — absence only means "not
+    // indexed", never "no entities".
+    st.semantic_entities = match base_state {
+        Some(s) => match crate::semantic::index_for_state(repo, &s)? {
+            Some(index) => {
+                let obj = repo.load(&index)?;
+                let fs = obj.field_sequence().unwrap_or(&[]);
+                Some(gid_list(fs, 0x02).len())
+            }
+            None => None,
+        },
+        None => None,
+    };
 
     let head_obj = match head {
         Some(h) => Some(repo.load(&h)?),
@@ -695,6 +714,21 @@ pub fn change_touches(repo: &Repo, change: &Gid, subject: &str) -> Result<bool, 
     Ok(false)
 }
 
+/// Like [`change_touches`] but true when any of several subject aliases
+/// matches (semantic resolution: file paths, module paths, lineage names).
+pub fn change_touches_subjects(
+    repo: &Repo,
+    change: &Gid,
+    subjects: &[String],
+) -> Result<bool, Error> {
+    for s in subjects {
+        if change_touches(repo, change, s)? {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
 /// One change that touches a subject, with its context.
 #[derive(Debug, Clone)]
 pub struct SubjectHit {
@@ -711,6 +745,31 @@ pub struct SubjectHit {
 /// All changes touching `subject`, deterministically ordered
 /// ((created_at desc, gid asc); ties and missing timestamps on gid).
 pub fn changes_touching(repo: &Repo, subject: &str) -> Result<Vec<SubjectHit>, Error> {
+    changes_touching_subjects(repo, &[subject.to_string()])
+}
+
+/// Like [`changes_touching`] but over several subject aliases (semantic
+/// resolution: file paths, module paths, and lineage-chain names all count).
+/// Deduplicated by change; the result is re-sorted deterministically.
+pub fn changes_touching_subjects(
+    repo: &Repo,
+    subjects: &[String],
+) -> Result<Vec<SubjectHit>, Error> {
+    let mut all: Vec<SubjectHit> = Vec::new();
+    let mut seen: std::collections::HashSet<Gid> = std::collections::HashSet::new();
+    for subject in subjects {
+        for hit in changes_touching_one(repo, subject)? {
+            if seen.insert(hit.change) {
+                all.push(hit);
+            }
+        }
+    }
+    sort_by_time_desc(&mut all, |h| h.created_at, |h| h.change);
+    Ok(all)
+}
+
+/// The single-subject walk behind [`changes_touching`].
+fn changes_touching_one(repo: &Repo, subject: &str) -> Result<Vec<SubjectHit>, Error> {
     let mut hits = Vec::new();
     let mut seen = HashSet::new();
     let visit = |repo: &Repo,
@@ -1202,10 +1261,16 @@ pub struct AttemptSummary {
 
 /// Trajectories whose changes touch the subject, plus trajectories sharing
 /// the intent of the touching changes. Touching attempts first; deterministic.
+/// Phase 5: subject aliases (semantic entity paths and lineage ancestors) are
+/// matched too, so a moved entity surfaces attempts against its earlier home.
 pub fn attempts(repo: &Repo, subject: &str) -> Result<Vec<AttemptSummary>, Error> {
+    let resolved = crate::semantic::resolve_subject(repo, subject)?;
+    let mut subjects = vec![subject.to_string()];
+    subjects.extend(resolved.aliases.iter().cloned());
+    let subjects = subjects;
     let mut out = Vec::new();
     let mut shared_intents: HashSet<Gid> = HashSet::new();
-    for hit in changes_touching(repo, subject)? {
+    for hit in changes_touching_subjects(repo, &subjects)? {
         if let Some(t) = &hit.trajectory {
             if let Some(intent) = trajectory_intent(repo, &t.1)? {
                 shared_intents.insert(intent);
@@ -1222,7 +1287,7 @@ pub fn attempts(repo: &Repo, subject: &str) -> Result<Vec<AttemptSummary>, Error
         for (vid, vobj) in &versions {
             let vfs = vobj.field_sequence().unwrap_or(&[]);
             for change in gid_list(vfs, 0x06) {
-                if change_touches(repo, &change, subject)? {
+                if change_touches_subjects(repo, &change, &subjects)? {
                     touched = true;
                 }
             }
@@ -1467,6 +1532,9 @@ pub struct WhyClaim {
 #[derive(Debug, Clone)]
 pub struct WhyReport {
     pub subject: String,
+    /// The resolved semantic entity (Phase 5), when the subject resolves to
+    /// one. Explicit lineage is preserved; never silently inferred.
+    pub semantic: Option<crate::semantic::EntityInfo>,
     pub introduced_by: Option<WhyNode>,
     pub last_modified: Option<Gid>,
     pub previous_approaches: Vec<AttemptSummary>,
@@ -1475,10 +1543,17 @@ pub struct WhyReport {
 
 /// Causal blame (brief §14): subject → Change → Intent → Claim → Evidence →
 /// Residual → (decision). Phase 2: no reconciliation decision nodes yet.
+/// Phase 5: when the subject resolves to a semantic entity, the walk uses the
+/// entity's aliases (file path, module path, lineage ancestors) so moves and
+/// renames surface the work that touched the entity across its history.
 pub fn why(repo: &Repo, subject: &str) -> Result<WhyReport, Error> {
-    let hits = changes_touching(repo, subject)?;
+    let resolved = crate::semantic::resolve_subject(repo, subject)?;
+    let mut subjects = vec![subject.to_string()];
+    subjects.extend(resolved.aliases.iter().cloned());
+    let hits = changes_touching_subjects(repo, &subjects)?;
     let mut report = WhyReport {
         subject: subject.to_string(),
+        semantic: resolved.entity,
         introduced_by: None,
         last_modified: None,
         previous_approaches: Vec::new(),
