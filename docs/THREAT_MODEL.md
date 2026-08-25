@@ -193,21 +193,31 @@ security-relevant structure.
 
 ---
 
-## 10. Remote Protocol Threats (Phase 6, implemented)
+## 10. Remote Protocol Threats (Phase 6–8, implemented)
 
 - Fetch verification: every received record is hashed before use; mismatch aborts the
   transfer (SEC-07). Native sync re-verifies `BLAKE3(envelope) == id` on both
   directions; a single corrupt record fails the whole transfer and publishes no refs
   (DISTRIBUTED.md §3–§4).
 - Negotiation: want/have sets are id sets; no executable payloads.
-- Authentication/authorization: transport-scoped. The shipped `FileTransport`
-  delegates to the filesystem; network transports MUST use mutual auth and
-  capability-scoped fetch grants, with TLS mandatory for non-local remotes.
+- Authentication/authorization (Phase 8): the `FileTransport` delegates to the
+  filesystem; SSH supplies mutual auth and encryption (`ssh host gemel serve <path>`,
+  argv-safe); the HTTP server enforces bearer-token capability grants
+  (`read`/`write` per token, `--read-only` globally) with per-op enforcement.
+  Non-loopback HTTP binds without tokens fail at startup; missing/wrong tokens are
+  `401`. The sync session is bounded (64 KiB lines, 4 GiB packs, 10M ids) and push
+  packs are schema- and identity-verified before insertion (HOSTED.md §6, §8).
 - Poisoning: remote-announced objects that fail hash verification are never inserted;
   the remote is reported. Same-id different-bytes is a fatal conflict (§11).
 - Local-only refs never travel: public-ref filtering happens on the advertising side
   (DISTRIBUTED.md §2).
-- No TLS downgrade: transport encryption is mandatory for non-local remotes.
+- No TLS downgrade: transport encryption is mandatory for non-local remotes;
+  `https://` URLs are rejected by the parser (TLS is a proxy concern) rather than
+  silently downgraded to plaintext (HOSTED.md §2).
+- Execution policy: recorded reproduction commands are never executed by ingestion,
+  status, sync, or the agent protocol; the FRF court is the single execution path and
+  it is governed by `config.execution_policy` (default `never_auto_execute`;
+  HOSTED.md §7).
 
 ---
 

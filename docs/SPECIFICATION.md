@@ -1,8 +1,7 @@
 # Gemel — Specification (Master Document)
 
-Status: **Phase 7 — Agent Protocol & Workflow Intelligence — complete.** Next phase:
-Phase 8 (hosted workflows, network transports, and deeper FRF integration per the
-roadmap).
+Status: **Phase 8 — Hosted Workflows & Network Transports — complete.** Next phase:
+Phase 9 (per the roadmap; see the Phase Plan §10).
 Document version: 1.3.0 (schema version `encver=1`, all object families `schemever=1`).
 Audience: implementers, protocol engineers, agent authors, maintainers.
 
@@ -509,12 +508,48 @@ Delivered (the substrate-first slice; hosted servers are Phase 8):
   malformed/oversized request rejection, honest next recommendations, blocked-claim
   verification, policy-driven readiness, and protocol/CLI consistency.
 
-### Phase 8 — Hosted Workflows & Network Transports
+### Phase 8 — Hosted Workflows & Network Transports (complete)
 
 **Entry:** Phase 7 complete. **Exit:** network transports (SSH/HTTP) implementing the
 Phase 6 transport trait with mutual auth and capability-scoped grants (THREAT_MODEL
 §10), hosted sync, repository policy enforcement servers, and deeper FRF court
-integration. (Roadmap placeholder.)
+integration. Normative protocol: `docs/HOSTED.md`.
+
+Delivered:
+
+- **Remote URL grammar** (`src/sync/transports.rs`): `ssh://[user@]host[:port]/path`,
+  `http://[token@]host[:port]/path` (port default 80), and local paths; `https://` is
+  rejected fail-closed (TLS is a proxy concern; THREAT_MODEL §10). Malformed ports are
+  errors, never silently swallowed; omitted ssh ports defer to `ssh(1)`. `gemel
+  remote add` validates URLs strictly; `--init` applies to local paths only.
+- **`gemel serve`**: the stdio session (the SSH transport backend —
+  `ssh host gemel serve <path>`, argv-safe) and `--http` hosted server with
+  bearer-token capability grants (`read`/`write`), `--read-only` enforcement,
+  `--root` multi-repository hosting with single-segment repo names and traversal
+  rejection, and non-loopback-without-tokens startup refusal.
+- **The bounded session protocol** (`src/sync/session.rs`): line-delimited JSON
+  `list_refs`/`reachable`/`missing`/`update_refs` plus raw-`gemlpack` `fetch`/`push`
+  with `pack_len` framing; limits (64 KiB lines, 4 GiB packs, 10M ids); push packs
+  decoded, schema-validated, and content-verified before insertion; `update_refs`
+  validated (public refs, full closure) and journaled atomically.
+- **Transports implement the Phase 6 trait** with `&mut self` methods (sessions own a
+  read position); FileTransport, SshTransport, and HttpTransport are interchangeable;
+  CLI `fetch`/`push`/`pull` accept names, URLs, or paths, and Git-only paths still
+  receive the deterministic projections (GIT_INTEROP.md §6).
+- **The FRF court runner** (`src/court.rs`; brief §38): `gemel court <evidence-id>`
+  re-executes the recorded reproduction command under `config.execution_policy`
+  (default `never_auto_execute`; `policy_gated` needs `--allow`; `allowlist` checks
+  `.gemel/court.allowlist`, `*` prefix patterns). The fresh observation is a new
+  evidence object — `court-runner` producer, outcome/exit_code, replayable
+  reproduction record, `evaluated_state` = head — and ingestion/status/sync/protocol
+  never execute anything.
+- Proven by `tests/phase8_tests.rs` (16 courts): URL grammar and fail-closed forms,
+  HTTP roundtrip with identical identities, idempotent re-push, capability auth
+  (missing/wrong token 401, read-only grants, read-only servers), non-loopback
+  fail-closed, `--root` multi-repo serving with traversal rejection, SSH-equivalent
+  sessions over the local binary, CLI push/pull over an HTTP URL, the court policy
+  matrix (default deny, `--allow`, allowlist, timeout → inconclusive, nothing
+  executes during status), and policy-gap readiness through `--json`.
 
 ---
 

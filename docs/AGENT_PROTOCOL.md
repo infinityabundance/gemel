@@ -578,8 +578,14 @@ Every verdict includes `reasons[]`; no verdict is produced without them.
 
 - Gemel references FRF courts, fixtures, comparators, normalizers, and receipts by
   immutable identity (evidence kind `court_receipt`, tool records, fixture refs).
-- Gemel never executes FRF or reproduction commands itself; execution is policy-gated
-  (`config.execution_policy`; default `never_auto_execute`).
+- Gemel never executes FRF or reproduction commands during ingestion, `status`,
+  sync, or a protocol session. The **court runner** (Phase 8; HOSTED.md §7) is the
+  single execution path: `gemel court <evidence-id>` re-executes the recorded
+  reproduction command under `config.execution_policy` (`never_auto_execute`
+  default, `policy_gated` requiring `--allow`, `allowlist` against
+  `.gemel/court.allowlist`), publishes the fresh observation as new evidence
+  (`court-runner` producer, outcome/exit_code, replayable reproduction record,
+  `evaluated_state` = head), and never rewrites the source evidence.
 - FRF logic (courts, comparators, reproducibility semantics, residual analysis) is not
   duplicated in Gemel; Gemel stores FRF artifacts and derives statuses from them.
 - The `reconcile --plan` endpoint may flag `verification_required` scopes; actual runs
@@ -610,6 +616,10 @@ Errors carry stable codes (`invalid_request`, `query_failed`, `limit_exceeded`,
 `claims`, `evidence`, `residuals`, `attempts`, `context`, `log`, `index`. Bounds: 64
 KiB request lines, 4 MiB responses; the session is stateless per request; EOF ends it;
 nothing is executed during a session.
+
+Network transports reuse this discipline as the sync session (Phase 8; HOSTED.md
+§6): `list_refs`/`reachable`/`missing`/`update_refs` plus raw-`gemlpack`
+`fetch`/`push`, bounded lines, packs, and id sets.
 
 ---
 

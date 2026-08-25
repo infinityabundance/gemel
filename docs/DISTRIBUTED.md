@@ -127,13 +127,24 @@ reconcile`.
 
 ## 6. Transports and security
 
-- `FileTransport` (the shipped transport) addresses a local filesystem path to an
-  initialized Gemel repository; `gemel remote add --init` creates one. Authentication
-  is the filesystem's; the protocol still verifies every byte.
-- Network transports (SSH/HTTP) implement the same six operations; TLS is mandatory for
-  non-local remotes (THREAT_MODEL.md §10); credentials never travel in packs.
+- `FileTransport` addresses a local filesystem path to an initialized Gemel
+  repository; `gemel remote add --init` creates one. Authentication is the
+  filesystem's; the protocol still verifies every byte.
+- **Network transports (Phase 8; HOSTED.md):** `SshTransport` runs
+  `ssh [-p port] [user@]host gemel serve <path>` — SSH supplies mutual auth and
+  encryption; `HttpTransport` POSTs the same session operations to
+  `gemel serve --http` with bearer-token capability grants (`read`/`write`) and
+  `--read-only` servers. All three implement the same six-operation trait with
+  `&mut self` methods (sessions own a read position). Remote arguments accept
+  `ssh://[user@]host[:port]/path`, `http://[token@]host:port/path`, or a local
+  path; `https://` is rejected fail-closed (TLS is a proxy concern).
+  `--root` hosting serves many repositories by single-segment URL path with
+  traversal rejection; non-loopback binds without tokens refuse to start.
 - Integrity ≠ authenticity: a verified object is byte-exact, but the producer's
   identity is carried by the object's own producer field, not by the transport.
+- The sync session is bounded (64 KiB lines, 4 GiB packs, 10M ids); push packs
+  are schema- and identity-verified before insertion; nothing is executed during
+  sync (the FRF court is the only execution path and is policy-gated; HOSTED.md §7).
 - Git-only remotes: `gemel push`/`pull` against a path that is a Git repository (not a
   Gemel one) use the deterministic export/import projections (GIT_INTEROP.md §3–§4);
   the loss documented there applies.
@@ -142,12 +153,14 @@ reconcile`.
 
 ```
 gemel remote                 list configured remotes
-gemel remote add <name> <path> [--init]
+gemel remote add <name> <path-or-url> [--init]
 gemel remote remove <name>
 gemel fetch <remote>         transfer objects + write refs/remotes/<name>/*
 gemel push <remote>          update the remote's public refs
 gemel pull <remote>          fetch + fast-forward (never overwrites divergence)
+gemel serve [path] [--http addr] [--root dir] [--read-only] [--token …]
+gemel court <evidence-id> [--allow] [--timeout secs]
 ```
 
 All commands support `--json` with the `gemel.query.v1` envelope. A remote argument
-may be a configured name or a direct path.
+may be a configured name, an `ssh://`/`http://` URL, or a direct path.

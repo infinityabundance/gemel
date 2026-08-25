@@ -86,9 +86,9 @@ fn native_roundtrip_identical_identities() {
     let b = temp_root("rt-b");
     let repo_a = seed(&a);
     let repo_b = Repo::init(&b, &InitOptions::default()).unwrap();
-    let ta = open_remote(&a);
+    let mut ta = open_remote(&a);
     // Fresh repo pulls everything from A.
-    let pulled = gemel::sync::pull(&repo_b, "origin", &ta).unwrap();
+    let pulled = gemel::sync::pull(&repo_b, "origin", &mut ta).unwrap();
     assert!(pulled.fast_forwarded);
     assert!(pulled.fetch.transferred > 0);
     // Canonical identities are identical on both sides.
@@ -137,17 +137,17 @@ fn negotiation_dedup_and_idempotence() {
     let b = temp_root("dedup-b");
     seed(&a);
     let repo_b = Repo::init(&b, &InitOptions::default()).unwrap();
-    let ta = open_remote(&a);
+    let mut ta = open_remote(&a);
     let tb = open_remote(&b);
     // Push B → A (empty apart from config), then push again: no-op.
-    let _first = gemel::sync::push(&repo_b, "origin", &ta).unwrap();
-    let second = gemel::sync::push(&repo_b, "origin", &ta).unwrap();
+    let _first = gemel::sync::push(&repo_b, "origin", &mut ta).unwrap();
+    let second = gemel::sync::push(&repo_b, "origin", &mut ta).unwrap();
     assert_eq!(second.missing_on_remote, 0);
     assert_eq!(second.transferred, 0);
     // Fetch A → B, then fetch again: no-op.
-    let fetched = gemel::sync::fetch(&repo_b, "origin", &ta).unwrap();
+    let fetched = gemel::sync::fetch(&repo_b, "origin", &mut ta).unwrap();
     assert!(fetched.transferred > 0);
-    let again = gemel::sync::fetch(&repo_b, "origin", &ta).unwrap();
+    let again = gemel::sync::fetch(&repo_b, "origin", &mut ta).unwrap();
     assert_eq!(again.wanted, 0);
     assert_eq!(again.transferred, 0);
     // Fetch from B → B's own store is a self-no-op (content identity).
@@ -158,7 +158,7 @@ fn negotiation_dedup_and_idempotence() {
         .unwrap()
         .unwrap();
     let closure = gemel::sync::reachable_ids(&repo_b, &[head]).unwrap();
-    let again = gemel::sync::fetch(&repo_b, "origin", &ta).unwrap();
+    let again = gemel::sync::fetch(&repo_b, "origin", &mut ta).unwrap();
     assert_eq!(again.transferred, 0);
     let closure2 = gemel::sync::reachable_ids(&repo_b, &[head]).unwrap();
     assert_eq!(closure, closure2);
@@ -170,8 +170,8 @@ fn tracking_refs_record_remote_knowledge() {
     let b = temp_root("track-b");
     let repo_a = seed(&a);
     let repo_b = Repo::init(&b, &InitOptions::default()).unwrap();
-    let ta = open_remote(&a);
-    gemel::sync::fetch(&repo_b, "origin", &ta).unwrap();
+    let mut ta = open_remote(&a);
+    gemel::sync::fetch(&repo_b, "origin", &mut ta).unwrap();
     let tracked = gemel::sync::tracked_refs(&repo_b, "origin").unwrap();
     assert!(tracked.iter().any(|(n, g)| {
         n == "refs/remotes/origin/head"
@@ -194,8 +194,8 @@ fn multi_producer_and_semantic_objects_travel() {
     let b = temp_root("fam-b");
     let repo_a = seed(&a);
     let repo_b = Repo::init(&b, &InitOptions::default()).unwrap();
-    let ta = open_remote(&a);
-    gemel::sync::pull(&repo_b, "origin", &ta).unwrap();
+    let mut ta = open_remote(&a);
+    gemel::sync::pull(&repo_b, "origin", &mut ta).unwrap();
     // Every object family present in A's public-ref closure is present in B's.
     let a_refs = gemel::sync::public_refs(&repo_a).unwrap();
     let a_seeds: Vec<gemel::gid::Gid> = a_refs.iter().map(|(_, g)| *g).collect();
@@ -243,10 +243,10 @@ fn corrupted_remote_fails_closed() {
         }
     }
     assert!(corrupted, "expected at least one object file");
-    let ta = open_remote(&a);
+    let mut ta = open_remote(&a);
     // Fetch fails (the remote's read verifies identity), and the local
     // repository is untouched: no objects promoted, no tracking refs.
-    assert!(gemel::sync::fetch(&repo_b, "origin", &ta).is_err());
+    assert!(gemel::sync::fetch(&repo_b, "origin", &mut ta).is_err());
     assert!(repo_b
         .read_ref(&format!("{}/origin/head", gemel::sync::REF_REMOTES))
         .unwrap()
@@ -270,8 +270,8 @@ fn conflicting_identity_is_fatal() {
     let b = temp_root("conflict-b");
     let repo_a = seed(&a);
     let repo_b = Repo::init(&b, &InitOptions::default()).unwrap();
-    let ta = open_remote(&a);
-    gemel::sync::pull(&repo_b, "origin", &ta).unwrap();
+    let mut ta = open_remote(&a);
+    gemel::sync::pull(&repo_b, "origin", &mut ta).unwrap();
     // Now corrupt B's copy of a blob (same id, different bytes): a push to A
     // would have the remote reject the conflicting bytes as a hash collision.
     let b_head = repo_b.read_ref(gemel::store::REF_HEAD).unwrap().unwrap();
@@ -287,8 +287,8 @@ fn conflicting_identity_is_fatal() {
     std::fs::write(&blob_path, bytes).unwrap();
     // A push from B to A must fail: the remote (A) already holds the genuine
     // object for that id and insert_bytes rejects the impostor.
-    let tb = open_remote(&b);
-    let err = gemel::sync::push(&repo_b, "origin", &tb).unwrap_err();
+    let mut tb = open_remote(&b);
+    let err = gemel::sync::push(&repo_b, "origin", &mut tb).unwrap_err();
     let text = format!("{err}");
     assert!(!text.is_empty());
     // A's refs are unchanged.
@@ -301,8 +301,8 @@ fn diverged_pull_refuses_and_preserves_local_work() {
     let b = temp_root("div-b");
     let repo_a = seed(&a);
     let repo_b = Repo::init(&b, &InitOptions::default()).unwrap();
-    let ta = open_remote(&a);
-    gemel::sync::pull(&repo_b, "origin", &ta).unwrap();
+    let mut ta = open_remote(&a);
+    gemel::sync::pull(&repo_b, "origin", &mut ta).unwrap();
     // B advances locally.
     write_file(&b, "src/lib.rs", "pub fn local_only() {}\n");
     workflow::begin_change(
@@ -342,7 +342,7 @@ fn diverged_pull_refuses_and_preserves_local_work() {
     .unwrap();
     // Pull refuses; local head untouched; remote knowledge is fetched and
     // tracked for reconciliation.
-    let err = gemel::sync::pull(&repo_b, "origin", &ta).unwrap_err();
+    let err = gemel::sync::pull(&repo_b, "origin", &mut ta).unwrap_err();
     assert!(format!("{err}").contains("diverged"));
     assert_eq!(
         repo_b.read_ref(gemel::store::REF_HEAD).unwrap().unwrap(),
@@ -422,8 +422,8 @@ fn fsck_clean_after_sync_on_both_sides() {
     let b = temp_root("fsck-b");
     let repo_a = seed(&a);
     let repo_b = Repo::init(&b, &InitOptions::default()).unwrap();
-    let ta = open_remote(&a);
-    gemel::sync::pull(&repo_b, "origin", &ta).unwrap();
+    let mut ta = open_remote(&a);
+    gemel::sync::pull(&repo_b, "origin", &mut ta).unwrap();
     for (label, repo) in [("local", &repo_b), ("remote", &repo_a)] {
         let report = fsck::run(
             repo,

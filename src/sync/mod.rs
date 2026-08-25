@@ -1,5 +1,5 @@
-//! Native distributed operation (Phase 6; SPECIFICATION.md Phase 6,
-//! STORAGE.md §10, GIT_INTEROP.md §6).
+//! Native distributed operation (Phase 6 + 8; SPECIFICATION.md Phase 6/8,
+//! STORAGE.md §10, GIT_INTEROP.md §6, HOSTED.md).
 //!
 //! Gemel synchronization is separate from Git interchange. This module
 //! implements the transport-agnostic sync protocol:
@@ -22,9 +22,13 @@
 //! different bytes) are fatal (the store rejects them). Nothing is executed
 //! during sync. Network authentication/authorization is the transport's
 //! concern (THREAT_MODEL.md §10); the protocol carries integrity, never
-//! implicit authority.
+//! implicit authority. Phase 8 adds the bounded session protocol
+//! (`session`), the ssh/http transports and the hosted HTTP server
+//! (`transports`) — see HOSTED.md.
 
 pub mod gemlpack;
+pub mod session;
+pub mod transports;
 
 use crate::exchange::export::write_atomic_fsync;
 use crate::gid::Gid;
@@ -124,22 +128,23 @@ pub fn ensure_reachable(repo: &Repo, refs: &[(String, Gid)]) -> Result<(), Error
 
 /// A transport to a remote Gemel repository. Implementations must be safe
 /// against hostile remotes: every returned envelope is re-verified by the
-/// caller before insertion.
+/// caller before insertion. The operations take `&mut self`: transports may
+/// own a session (ssh/HTTP) and a read position.
 pub trait Transport {
     /// A human description of the remote (for status output).
     fn describe(&self) -> String;
     /// The remote's public refs.
-    fn list_refs(&self) -> Result<Vec<(String, Gid)>, Error>;
+    fn list_refs(&mut self) -> Result<Vec<(String, Gid)>, Error>;
     /// The remote's reachable closure for `seeds` (ids only).
-    fn reachable_ids(&self, seeds: &[Gid]) -> Result<Vec<Gid>, Error>;
+    fn reachable_ids(&mut self, seeds: &[Gid]) -> Result<Vec<Gid>, Error>;
     /// Which of `ids` the remote lacks.
-    fn missing_ids(&self, ids: &[Gid]) -> Result<Vec<Gid>, Error>;
+    fn missing_ids(&mut self, ids: &[Gid]) -> Result<Vec<Gid>, Error>;
     /// The envelopes of `ids` (verified by the caller).
-    fn fetch_objects(&self, ids: &[Gid]) -> Result<Vec<(Gid, Vec<u8>)>, Error>;
+    fn fetch_objects(&mut self, ids: &[Gid]) -> Result<Vec<(Gid, Vec<u8>)>, Error>;
     /// Publishes envelopes on the remote (the remote verifies identities).
-    fn push_objects(&self, records: &[(Gid, Vec<u8>)]) -> Result<(), Error>;
+    fn push_objects(&mut self, records: &[(Gid, Vec<u8>)]) -> Result<(), Error>;
     /// Atomically updates the remote's refs (validated on the remote).
-    fn update_refs(&self, refs: &[(String, Gid)]) -> Result<(), Error>;
+    fn update_refs(&mut self, refs: &[(String, Gid)]) -> Result<(), Error>;
 }
 
 /// A transport over a local filesystem path to an initialized Gemel
@@ -185,19 +190,19 @@ impl Transport for FileTransport {
         self.path.display().to_string()
     }
 
-    fn list_refs(&self) -> Result<Vec<(String, Gid)>, Error> {
+    fn list_refs(&mut self) -> Result<Vec<(String, Gid)>, Error> {
         public_refs(&self.remote)
     }
 
-    fn reachable_ids(&self, seeds: &[Gid]) -> Result<Vec<Gid>, Error> {
+    fn reachable_ids(&mut self, seeds: &[Gid]) -> Result<Vec<Gid>, Error> {
         reachable_ids(&self.remote, seeds)
     }
 
-    fn missing_ids(&self, ids: &[Gid]) -> Result<Vec<Gid>, Error> {
+    fn missing_ids(&mut self, ids: &[Gid]) -> Result<Vec<Gid>, Error> {
         missing_ids(&self.remote, ids)
     }
 
-    fn fetch_objects(&self, ids: &[Gid]) -> Result<Vec<(Gid, Vec<u8>)>, Error> {
+    fn fetch_objects(&mut self, ids: &[Gid]) -> Result<Vec<(Gid, Vec<u8>)>, Error> {
         let mut out = Vec::with_capacity(ids.len());
         for id in ids {
             out.push((*id, self.remote.read_bytes(id)?));
@@ -205,7 +210,7 @@ impl Transport for FileTransport {
         Ok(out)
     }
 
-    fn push_objects(&self, records: &[(Gid, Vec<u8>)]) -> Result<(), Error> {
+    fn push_objects(&mut self, records: &[(Gid, Vec<u8>)]) -> Result<(), Error> {
         for (id, envelope) in records {
             // insert_bytes verifies the identity and rejects id↔bytes
             // conflicts with objects already on the remote (fatal).
@@ -219,7 +224,7 @@ impl Transport for FileTransport {
         Ok(())
     }
 
-    fn update_refs(&self, refs: &[(String, Gid)]) -> Result<(), Error> {
+    fn update_refs(&mut self, refs: &[(String, Gid)]) -> Result<(), Error> {
         // The remote validates names, presence of the closure, and applies
         // the transaction journaled-atomically.
         ensure_reachable(&self.remote, refs)?;
@@ -352,7 +357,11 @@ pub fn tracked_refs(repo: &Repo, remote: &str) -> Result<Vec<(String, Gid)>, Err
 /// Fetches a remote: negotiate by content identity, transfer verified
 /// envelopes, publish tracking refs. Idempotent and resumable — a re-fetch
 /// transfers nothing.
-pub fn fetch(repo: &Repo, remote: &str, transport: &dyn Transport) -> Result<FetchOutcome, Error> {
+pub fn fetch(
+    repo: &Repo,
+    remote: &str,
+    transport: &mut dyn Transport,
+) -> Result<FetchOutcome, Error> {
     let remote_refs = transport.list_refs()?;
     let seeds: Vec<Gid> = remote_refs.iter().map(|(_, g)| *g).collect();
     let remote_closure = transport.reachable_ids(&seeds)?;
@@ -404,7 +413,11 @@ pub struct PushOutcome {
 /// Pushes the local public refs to a remote: compute what the remote lacks
 /// by content identity, transfer verified envelopes, then atomically update
 /// the remote's public refs (validated on the remote).
-pub fn push(repo: &Repo, remote: &str, transport: &dyn Transport) -> Result<PushOutcome, Error> {
+pub fn push(
+    repo: &Repo,
+    remote: &str,
+    transport: &mut dyn Transport,
+) -> Result<PushOutcome, Error> {
     let refs = public_refs(repo)?;
     let seeds: Vec<Gid> = refs.iter().map(|(_, g)| *g).collect();
     let local_closure = reachable_ids(repo, &seeds)?;
@@ -463,7 +476,11 @@ fn is_ancestor(repo: &Repo, ancestor: &Gid, head: &Gid) -> Result<bool, Error> {
 /// Fetches a remote and fast-forwards the local public refs when the remote
 /// head descends from (or equals) the local head. A diverged local head is
 /// never silently overwritten: the caller reconciles instead.
-pub fn pull(repo: &Repo, remote: &str, transport: &dyn Transport) -> Result<PullOutcome, Error> {
+pub fn pull(
+    repo: &Repo,
+    remote: &str,
+    transport: &mut dyn Transport,
+) -> Result<PullOutcome, Error> {
     let fetched = fetch(repo, remote, transport)?;
     let remote_refs = tracked_refs(repo, remote)?;
     let remote_head = remote_refs
@@ -589,18 +606,18 @@ mod tests {
         let b = temp_root("roundtrip-b");
         let repo_a = seed(&a);
         let repo_b = Repo::init(&b, &InitOptions::default()).unwrap();
-        let ta = FileTransport::open(&a, false).unwrap(); // transport TO A
-                                                          // B is empty apart from its init-time config: pushing B → A moves at
-                                                          // most that config, and a second push is a strict no-op.
-        let _ = push(&repo_b, "test", &ta).unwrap();
-        let out = push(&repo_b, "test", &ta).unwrap();
+        let mut ta = FileTransport::open(&a, false).unwrap(); // transport TO A
+                                                              // B is empty apart from its init-time config: pushing B → A moves at
+                                                              // most that config, and a second push is a strict no-op.
+        let _ = push(&repo_b, "test", &mut ta).unwrap();
+        let out = push(&repo_b, "test", &mut ta).unwrap();
         assert_eq!(out.missing_on_remote, 0);
         assert_eq!(out.transferred, 0);
         // Fetch from A into B: everything transfers.
-        let fetched = fetch(&repo_b, "origin", &ta).unwrap();
+        let fetched = fetch(&repo_b, "origin", &mut ta).unwrap();
         assert!(fetched.transferred > 0);
         // Second fetch: idempotent, nothing transferred.
-        let again = fetch(&repo_b, "origin", &ta).unwrap();
+        let again = fetch(&repo_b, "origin", &mut ta).unwrap();
         assert_eq!(again.wanted, 0);
         assert_eq!(again.transferred, 0);
         // B now has A's refs under tracking.
@@ -610,7 +627,7 @@ mod tests {
                 && *g == repo_a.read_ref(REF_HEAD).unwrap().unwrap()
         }));
         // Pull fast-forwards a fresh repo and the head states agree.
-        let pulled = pull(&repo_b, "origin", &ta).unwrap();
+        let pulled = pull(&repo_b, "origin", &mut ta).unwrap();
         assert!(pulled.fast_forwarded);
         assert_eq!(
             repo_b.read_ref(REF_HEAD).unwrap(),
@@ -625,8 +642,8 @@ mod tests {
         let repo_a = seed(&a);
         let repo_b = Repo::init(&b, &InitOptions::default()).unwrap();
         // B fetches A first.
-        let ta = FileTransport::open(&a, false).unwrap(); // transport TO A
-        fetch(&repo_b, "origin", &ta).unwrap();
+        let mut ta = FileTransport::open(&a, false).unwrap(); // transport TO A
+        fetch(&repo_b, "origin", &mut ta).unwrap();
         // B makes its own change.
         write_file(
             &b,
@@ -650,14 +667,14 @@ mod tests {
         )
         .unwrap();
         // Push B → A: A gains exactly the new objects.
-        let pushed = push(&repo_b, "origin", &ta).unwrap();
+        let pushed = push(&repo_b, "origin", &mut ta).unwrap();
         assert!(pushed.transferred > 0);
         // Second push: nothing to transfer.
-        let again = push(&repo_b, "origin", &ta).unwrap();
+        let again = push(&repo_b, "origin", &mut ta).unwrap();
         assert_eq!(again.missing_on_remote, 0);
         assert_eq!(again.transferred, 0);
         // A can now fetch B's head back.
-        fetch(&repo_a, "other", &ta).unwrap();
+        fetch(&repo_a, "other", &mut ta).unwrap();
         assert_eq!(
             repo_a.read_ref(REF_HEAD).unwrap(),
             repo_b.read_ref(REF_HEAD).unwrap()
@@ -670,8 +687,8 @@ mod tests {
         let b = temp_root("div-b");
         let repo_a = seed(&a);
         let repo_b = Repo::init(&b, &InitOptions::default()).unwrap();
-        let ta = FileTransport::open(&a, false).unwrap(); // transport TO A
-        pull(&repo_b, "origin", &ta).unwrap();
+        let mut ta = FileTransport::open(&a, false).unwrap(); // transport TO A
+        pull(&repo_b, "origin", &mut ta).unwrap();
         // Both at A's head. B diverges.
         write_file(&b, "src/lib.rs", "pub fn local_only() {}\n");
         workflow::begin_change(
@@ -712,14 +729,14 @@ mod tests {
         // objects have already been fetched by the failed pull (pull fetches
         // first), so a second fetch transfers nothing — the tracking refs are
         // the reconciliation surface.
-        let err = pull(&repo_b, "origin", &ta).unwrap_err();
+        let err = pull(&repo_b, "origin", &mut ta).unwrap_err();
         let text = format!("{err}");
         assert!(text.contains("diverged"), "unexpected error: {text}");
         assert!(!tracked_refs(&repo_b, "origin").unwrap().is_empty());
         // The failed pull never moved the local head.
         let local_head = repo_b.read_ref(REF_HEAD).unwrap();
         assert!(local_head.is_some());
-        let fetched = fetch(&repo_b, "origin", &ta).unwrap();
+        let fetched = fetch(&repo_b, "origin", &mut ta).unwrap();
         assert_eq!(fetched.transferred, 0);
     }
 }

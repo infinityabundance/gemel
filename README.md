@@ -22,8 +22,10 @@ deterministically encoded object model implemented in native Rust.
 
 ## Status
 
-**Phase 7 — Agent Protocol & Workflow Intelligence — complete.** Next: Phase 8
-(hosted workflows / network transports).
+**Phase 8 — Hosted Workflows & Network Transports — complete.** Next: Phase 9 (per
+`docs/SPECIFICATION.md` §10).
+
+**Phase 7 — Agent Protocol & Workflow Intelligence — complete.**
 
 **Phase 6 — Distributed Operation — complete.**
 
@@ -201,6 +203,28 @@ brief §22–§24, §13):
   based gap detection; missing required verification makes readiness `NOT_READY`.
 - 6 courts in `tests/phase7_tests.rs`.
 
+**Phase 8 delivers hosted workflows & network transports** (HOSTED.md):
+
+- `gemel serve` — the bounded stdio sync session (the SSH transport backend) and
+  `--http` hosted servers with bearer-token capability grants (`read`/`write`),
+  `--read-only` enforcement, `--root` multi-repository hosting (single-segment URL
+  paths, traversal rejected), and non-loopback-without-tokens startup refusal.
+- Remote arguments accept `ssh://[user@]host[:port]/path`, `http://[token@]host:port/
+  path`, or local paths; `https://` is rejected fail-closed (TLS is a proxy concern).
+  Strict port parsing; `gemel remote add` validates URLs.
+- Both network transports implement the Phase 6 six-operation trait (`&mut self`
+  sessions); `gemel fetch/push/pull` accept names, URLs, or paths — identical
+  canonical identities across HTTP/SSH/file transports, idempotent re-push.
+- **The FRF court runner** (brief §38): `gemel court <evidence-id>` re-executes the
+  recorded reproduction command under `config.execution_policy` — default
+  `never_auto_execute`, `policy_gated` with `--allow`, or an allowlist — publishing
+  the fresh observation as new evidence (`court-runner` producer,
+  `evaluated_state` = head). It is the **only** execution path: ingestion, `status`,
+  sync, and the agent protocol never run anything.
+- 16 courts in `tests/phase8_tests.rs` (URL grammar + fail-closed, HTTP/SSH
+  roundtrips, capability auth, multi-repo `--root`, read-only servers, court policy
+  matrix + timeout → inconclusive, policy-gap readiness).
+
 ## Reading order
 
 1. `docs/SPECIFICATION.md` — purpose, principles, architecture, conformance matrices.
@@ -210,8 +234,9 @@ brief §22–§24, §13):
 5. `docs/GIT_INTEROP.md` — deterministic Git interchange.
 6. `docs/AGENT_PROTOCOL.md` — the machine query surface + agent session protocol.
 7. `docs/DISTRIBUTED.md` — native sync protocol (Phase 6).
-8. `docs/EXCHANGE.md` — Git-carried exchange rollups (Phase 1.5).
-9. `docs/THREAT_MODEL.md` — security model and fail-closed catalog.
+8. `docs/HOSTED.md` — network transports, hosted sync, FRF court (Phase 8).
+9. `docs/EXCHANGE.md` — Git-carried exchange rollups (Phase 1.5).
+10. `docs/THREAT_MODEL.md` — security model and fail-closed catalog.
 
 ## Layout
 
@@ -226,8 +251,10 @@ src/                    the single `gemel` crate
 │                       trajectory close, residual resolve
 ├── semantic/          Phase 5: deterministic Rust extractor, entity/index objects,
 │                      lineage, semantic diff/resolution
-├── sync/              Phase 6: gemlpack transfer format, transport trait,
-│                      negotiation, fetch/push/pull, remotes config
+├── sync/              Phase 6 + 8: gemlpack transfer format, transport trait,
+│                      negotiation, fetch/push/pull, remotes config, session,
+│                      ssh/http transports + HTTP server (HOSTED.md)
+├── court.rs           Phase 8: the FRF court runner (policy-gated execution)
 ├── protocol.rs        Phase 7: bounded agent session protocol (stdin/stdout JSON)
 ├── query.rs           log/show/status, why/claims/evidence/residuals/attempts/
 │                      trajectory/context bundles, derived statuses, pagination
@@ -241,11 +268,11 @@ src/                    the single `gemel` crate
 └── bin/
     ├── gemel.rs        the CLI (init status snapshot change log show diff checkout fsck
     │                   why claims evidence residuals attempts trajectory checkpoint
-    │                   context reconcile exchange)
+    │                   context reconcile exchange serve court remote fetch push pull)
     └── golden-gen.rs   golden vector generator
 golden/                 pinned golden vectors (canonical bytes + identities)
 docs/                   the normative specification set
-tests/                  Phase 1 + 2 + 3 + 1.5 + 4 + 5 + 6 + 7 integration suites (the acceptance demos)
+tests/                  Phase 1 + 2 + 3 + 1.5 + 4 + 5 + 6 + 7 + 8 integration suites (the acceptance demos)
 ```
 
 Layering is disciplined within the crate: primitives → encoding → schema → fixtures →
@@ -254,7 +281,7 @@ store → workflow/query → CLI; nothing depends upward.
 ## Validation
 
 ```sh
-cargo test                       # unit + golden + Phase 1/2/3/1.5 integration suites
+cargo test                       # unit + golden + Phase 1/2/3/1.5/4/5/6/7/8 integration suites
 cargo clippy --all-targets       # zero warnings
 cargo run --bin golden-gen       # golden vectors up to date (protocol-change only)
 ```

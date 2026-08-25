@@ -337,6 +337,41 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// Serve the repository for sync (Phase 8): stdio session by default
+    /// (the SSH transport backend); `--http` starts the hosted HTTP server.
+    Serve {
+        /// Repository path to serve (default: the repository root).
+        repo_path: Option<PathBuf>,
+        /// HTTP listen address (e.g. 127.0.0.1:8033).
+        #[arg(long)]
+        http: Option<String>,
+        /// Serve any Gemel repository under this root by URL path.
+        #[arg(long)]
+        root: Option<PathBuf>,
+        /// Refuse mutations (fetch-only server).
+        #[arg(long)]
+        read_only: bool,
+        /// Bearer token (repeatable) or a token file for HTTP auth.
+        #[arg(long)]
+        token: Vec<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Run the FRF court for an evidence object (Phase 8; brief §38):
+    /// policy-gated re-execution of the recorded reproduction command,
+    /// publishing the fresh observation.
+    Court {
+        /// Evidence identity with a recorded reproduction command.
+        id: String,
+        /// Satisfy `policy_gated` execution policy (explicit action).
+        #[arg(long)]
+        allow: bool,
+        /// Run timeout in seconds (default 300).
+        #[arg(long, default_value_t = 300)]
+        timeout: u64,
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -2097,9 +2132,15 @@ fn run(cli: &Cli) -> Result<u8, Error> {
                     init,
                     json,
                 }) => {
-                    // Validate (and optionally initialize) the remote before
-                    // recording it: a broken remote is never configured.
-                    let _ = gemel::sync::FileTransport::open(Path::new(path), *init)?;
+                    // Validate the remote before recording it: a broken
+                    // remote is never configured. URLs (ssh://, http://) are
+                    // parsed strictly; `--init` applies to local paths only.
+                    let url = gemel::sync::transports::parse_remote(path)?;
+                    if let gemel::sync::transports::RemoteUrl::Local(p) = &url {
+                        let _ = gemel::sync::FileTransport::open(p, *init)?;
+                    } else if *init {
+                        return Err(Error::Invalid("--init applies to local paths only".into()));
+                    }
                     gemel::sync::add_remote(&repo, name, path)?;
                     if *json {
                         print_json(
@@ -2127,10 +2168,10 @@ fn run(cli: &Cli) -> Result<u8, Error> {
         }
         Command::Fetch { remote, json } => {
             let repo = Repo::find(cli.repo.as_deref().unwrap_or(&std::env::current_dir()?))?;
-            let (name, path) = resolve_remote(&repo, remote)?;
-            match open_sync_remote(&path)? {
-                RemoteKind::Native(transport) => {
-                    let out = gemel::sync::fetch(&repo, &name, &*transport)?;
+            let (name, target) = gemel::sync::transports::resolve_target(&repo, remote)?;
+            match target {
+                RemoteTarget::Native(mut transport) => {
+                    let out = gemel::sync::fetch(&repo, &name, &mut *transport)?;
                     if *json {
                         print_json(
                             "fetch",
@@ -2150,7 +2191,7 @@ fn run(cli: &Cli) -> Result<u8, Error> {
                     }
                     Ok(0)
                 }
-                RemoteKind::Git(git_dir) => {
+                RemoteTarget::Git(git_dir) => {
                     // Git-only remote: deterministic import projection.
                     let out = gemel::git_interop::import_git(
                         &repo,
@@ -2178,10 +2219,10 @@ fn run(cli: &Cli) -> Result<u8, Error> {
         }
         Command::Push { remote, json } => {
             let repo = Repo::find(cli.repo.as_deref().unwrap_or(&std::env::current_dir()?))?;
-            let (_name, path) = resolve_remote(&repo, remote)?;
-            match open_sync_remote(&path)? {
-                RemoteKind::Native(transport) => {
-                    let out = gemel::sync::push(&repo, &_name, &*transport)?;
+            let (name, target) = gemel::sync::transports::resolve_target(&repo, remote)?;
+            match target {
+                RemoteTarget::Native(mut transport) => {
+                    let out = gemel::sync::push(&repo, &name, &mut *transport)?;
                     if *json {
                         print_json(
                             "push",
@@ -2200,7 +2241,7 @@ fn run(cli: &Cli) -> Result<u8, Error> {
                     }
                     Ok(0)
                 }
-                RemoteKind::Git(git_dir) => {
+                RemoteTarget::Git(git_dir) => {
                     // Git-only remote: deterministic export projection.
                     let out = gemel::git_interop::export_git(
                         &repo,
@@ -2214,13 +2255,13 @@ fn run(cli: &Cli) -> Result<u8, Error> {
                         print_json(
                             "push",
                             json!({
-                                "remote": _name,
+                                "remote": name,
                                 "mode": "git",
                                 "commits": out.commits,
                             }),
                         );
                     } else {
-                        println!("pushed {} commit(s) to Git remote {}", out.commits, _name);
+                        println!("pushed {} commit(s) to Git remote {}", out.commits, name);
                     }
                     Ok(0)
                 }
@@ -2228,10 +2269,10 @@ fn run(cli: &Cli) -> Result<u8, Error> {
         }
         Command::Pull { remote, json } => {
             let repo = Repo::find(cli.repo.as_deref().unwrap_or(&std::env::current_dir()?))?;
-            let (name, path) = resolve_remote(&repo, remote)?;
-            match open_sync_remote(&path)? {
-                RemoteKind::Native(transport) => {
-                    let out = gemel::sync::pull(&repo, &name, &*transport)?;
+            let (name, target) = gemel::sync::transports::resolve_target(&repo, remote)?;
+            match target {
+                RemoteTarget::Native(mut transport) => {
+                    let out = gemel::sync::pull(&repo, &name, &mut *transport)?;
                     if *json {
                         print_json(
                             "pull",
@@ -2251,7 +2292,7 @@ fn run(cli: &Cli) -> Result<u8, Error> {
                     }
                     Ok(0)
                 }
-                RemoteKind::Git(git_dir) => {
+                RemoteTarget::Git(git_dir) => {
                     let out = gemel::git_interop::import_git(
                         &repo,
                         &gemel::git_interop::ImportGitOptions {
@@ -2342,50 +2383,134 @@ fn run(cli: &Cli) -> Result<u8, Error> {
             }
             Ok(0)
         }
+        Command::Serve {
+            repo_path,
+            http,
+            root,
+            read_only,
+            token,
+            json,
+        } => {
+            // The repository to serve: the CLI's --repo, an explicit path
+            // argument (the SSH transport's `gemel serve <path>`), or the
+            // discovered root. With `--root` the server hosts many
+            // repositories and needs no local repository of its own.
+            let cwd = std::env::current_dir()?;
+            let start = repo_path
+                .clone()
+                .or_else(|| cli.repo.clone())
+                .unwrap_or(cwd);
+            match http {
+                Some(addr) => {
+                    let mut tokens = Vec::new();
+                    for t in token {
+                        if let Ok(text) = std::fs::read_to_string(t) {
+                            // A token file: one `token capability` per line.
+                            for line in text.lines() {
+                                let line = line.trim();
+                                if line.is_empty() || line.starts_with('#') {
+                                    continue;
+                                }
+                                let mut it = line.split_whitespace();
+                                if let (Some(tok), Some(cap)) = (it.next(), it.next()) {
+                                    if cap == "read" || cap == "write" {
+                                        tokens.push((tok.to_string(), cap.to_string()));
+                                    }
+                                }
+                            }
+                        } else if t.contains(' ') {
+                            let mut it = t.split_whitespace();
+                            if let (Some(tok), Some(cap)) = (it.next(), it.next()) {
+                                tokens.push((tok.to_string(), cap.to_string()));
+                            }
+                        } else {
+                            tokens.push((t.clone(), "write".to_string()));
+                        }
+                    }
+                    let opts = gemel::sync::transports::ServeHttpOptions {
+                        root: root.clone(),
+                        read_only: *read_only,
+                        tokens,
+                    };
+                    let repo = match &opts.root {
+                        Some(_) => Repo::find(&start).ok(),
+                        None => Some(Repo::find(&start)?),
+                    };
+                    let server_root = match &opts.root {
+                        Some(r) => r.clone(),
+                        None => repo
+                            .as_ref()
+                            .expect("single-repo serve requires a repository")
+                            .root()
+                            .to_path_buf(),
+                    };
+                    if *json {
+                        print_json(
+                            "serve",
+                            json!({
+                                "http": addr,
+                                "root": server_root.display().to_string(),
+                                "read_only": read_only,
+                                "tokens": opts.tokens.len(),
+                            }),
+                        );
+                    } else {
+                        println!("serving {} on http://{addr}", server_root.display());
+                    }
+                    gemel::sync::transports::serve_http(&server_root, addr, &opts)?;
+                    Ok(0)
+                }
+                None => {
+                    // Stdio session (the SSH transport backend).
+                    let repo = Repo::find(&start)?;
+                    let opts = gemel::sync::session::ServeOptions {
+                        read_only: *read_only,
+                    };
+                    gemel::sync::session::serve_session(&repo, &opts)?;
+                    Ok(0)
+                }
+            }
+        }
+        Command::Court {
+            id,
+            allow,
+            timeout,
+            json,
+        } => {
+            let repo = Repo::find(cli.repo.as_deref().unwrap_or(&std::env::current_dir()?))?;
+            let gid = repo.resolve(id)?;
+            let out = gemel::court::run_court(&repo, &gid, *allow, *timeout)?;
+            if *json {
+                print_json(
+                    "court",
+                    json!({
+                        "evidence": out.evidence.to_string(),
+                        "outcome": out.outcome,
+                        "exit_code": out.exit_code,
+                        "stdout_digest": out.stdout_digest,
+                        "stderr_digest": out.stderr_digest,
+                        "detail": out.detail,
+                    }),
+                );
+            } else {
+                println!("court: {} [{}]", out.evidence, out.outcome);
+                if let Some(code) = out.exit_code {
+                    println!("  exit code: {code}");
+                }
+                if !out.detail.is_empty() {
+                    println!("  detail: {}", out.detail);
+                }
+            }
+            Ok(0)
+        }
     }
 }
 
-/// Resolves a remote argument: a configured remote name, or a direct path.
-fn resolve_remote(repo: &Repo, arg: &str) -> Result<(String, PathBuf), Error> {
-    if let Ok(path) = gemel::sync::remote_path(repo, arg) {
-        return Ok((arg.to_string(), path));
-    }
-    let path = PathBuf::from(arg);
-    Ok((arg.to_string(), path))
-}
+/// The sync target behind a remote argument (used by the fetch/push/pull
+/// handlers): a native Gemel repository or a Git-only repository
+/// (GIT_INTEROP.md §6: push/pull serve both).
+type RemoteTarget = gemel::sync::transports::RemoteTarget;
 
-/// The sync target behind a path: a native Gemel repository or a Git-only
-/// repository (GIT_INTEROP.md §6: push/pull serve both).
-enum RemoteKind {
-    Native(Box<dyn gemel::sync::Transport>),
-    Git(PathBuf),
-}
-
-fn open_sync_remote(path: &Path) -> Result<RemoteKind, Error> {
-    if path
-        .join(gemel::store::META_DIR)
-        .join("meta.json")
-        .is_file()
-    {
-        return Ok(RemoteKind::Native(Box::new(
-            gemel::sync::FileTransport::open(path, false)?,
-        )));
-    }
-    let git_dir = if path.join(".git").is_dir() {
-        Some(path.join(".git"))
-    } else if path.join("HEAD").is_file() && path.join("objects").is_dir() {
-        Some(path.to_path_buf()) // bare repository
-    } else {
-        None
-    };
-    match git_dir {
-        Some(g) => Ok(RemoteKind::Git(g)),
-        None => Err(Error::Invalid(format!(
-            "{} is neither a gemel repository nor a git repository",
-            path.display()
-        ))),
-    }
-}
 /// Walks up from `start` looking for `.gemel/` (native store) or
 /// `.gemel/exchange/` (exchange material only; EXCHANGE.md §34).
 fn discover_exchange_root(start: &Path) -> Result<Option<PathBuf>, Error> {
