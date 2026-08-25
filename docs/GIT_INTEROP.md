@@ -171,16 +171,18 @@ silently lost or invented.
 
 ## 6. clone / push / pull
 
-Semantics outline (implementation Phase 4/6; not Phase 0):
+Implemented (Phase 6; DISTRIBUTED.md):
 
 - `gemel clone <url>` initializes a repository and imports the remote's Git history
-  via the §4 algorithm (or Gemel-native sync when both sides are Gemel — brief §47:
-  Git interchange and Gemel synchronization are separate problems).
-- `gemel push` / `gemel pull`:
-  - Gemel↔Gemel: native object negotiation (STORAGE.md §10) — exact, deduplicating.
-  - Gemel→Git remote: deterministic export projection (§3) of the pushed ref set.
-  - Git remote→Gemel: deterministic import projection (§4), never merging Gemel-native
-    metadata from the Git side.
+  via the §4 algorithm.
+- `gemel remote add <name> <path> [--init]` configures a native sync remote; `gemel
+  fetch` / `push` / `pull` operate on it:
+  - Gemel↔Gemel: native object negotiation (STORAGE.md §10) — exact, deduplicating,
+    full content (including blobs). `pull` is fetch + fast-forward and refuses
+    divergence. Fetched remote refs live under `refs/remotes/<name>/*`.
+  - A remote path that is a Git repository (not a Gemel one) receives the
+    deterministic export projection (§3) on `push` and the import projection (§4) on
+    `pull` — never a semantic merge from the Git side.
 - Pushed Git commits are considered derived artifacts: `fsck` and GC treat them as
   disposable (regenerable from canonical objects); mappings are canonical.
 

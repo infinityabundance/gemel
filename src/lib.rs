@@ -44,6 +44,7 @@ pub mod reconcile;
 pub mod semantic;
 pub mod spec;
 pub mod store;
+pub mod sync;
 pub mod validate;
 pub mod value;
 pub mod varint;

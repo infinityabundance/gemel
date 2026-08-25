@@ -18,7 +18,10 @@ deterministically encoded object model implemented in native Rust.
 
 ## Status
 
-**Phase 5 — Semantic Depth — complete.** Next: Phase 6 (Distributed Operation).
+**Phase 6 — Distributed Operation — complete.** Next: Phase 7 (agent protocol /
+hosted workflows).
+
+**Phase 5 — Semantic Depth — complete.**
 
 **Phase 4 — Git Interchange — complete.**
 **Phase 1.5 — Git-Carried Exchange Rollups — complete.**
@@ -161,6 +164,23 @@ brief §22–§24, §13):
   re-establishes `refs/semantic/*` over the imported objects with **identical
   identities** (12 courts in `tests/phase5_tests.rs`).
 
+**Phase 6 delivers native distributed operation** (DISTRIBUTED.md; STORAGE.md §10):
+
+- `gemel remote add|remove|list`, `gemel fetch|push|pull` — transport-agnostic sync:
+  content-identity negotiation (`reachable_ids`/`missing_ids`), verified `gemlpack`
+  transfers, and atomic validated ref publication. A re-push transfers nothing;
+  resumed fetches re-negotiate from the new have-set.
+- **Public-ref policy**: only knowledge refs travel (head, names, trajectories,
+  semantic indexes, …); workspace, exchange-marker, and mapping bookkeeping never
+  leaves home. Fetched refs track under `refs/remotes/<name>/*`.
+- **Fail-closed integrity**: every envelope is re-verified end-to-end; a corrupt
+  remote aborts with local state untouched; same-id different-bytes is fatal; a
+  diverged `pull` refuses and preserves local work for `gemel reconcile`.
+- Git-only remotes receive the deterministic export/import projections.
+- 10 courts in `tests/phase6_tests.rs` (identical identities across machines,
+  negotiation dedup, multi-producer + semantic transport, corruption, conflict,
+  divergence, Git projection, fsck-clean sync).
+
 ## Reading order
 
 1. `docs/SPECIFICATION.md` — purpose, principles, architecture, conformance matrices.
@@ -169,7 +189,9 @@ brief §22–§24, §13):
 4. `docs/INVARIANTS.md` — the complete correctness contract.
 5. `docs/GIT_INTEROP.md` — deterministic Git interchange.
 6. `docs/AGENT_PROTOCOL.md` — the machine query surface.
-7. `docs/THREAT_MODEL.md` — security model and fail-closed catalog.
+7. `docs/DISTRIBUTED.md` — native sync protocol (Phase 6).
+8. `docs/EXCHANGE.md` — Git-carried exchange rollups (Phase 1.5).
+9. `docs/THREAT_MODEL.md` — security model and fail-closed catalog.
 
 ## Layout
 
@@ -182,8 +204,12 @@ src/                    the single `gemel` crate
 ├── content.rs          working tree ↔ state, tree deltas, operation synthesis, Myers diff
 ├── workflow.rs         change begin/finish, intents, trajectories, checkpoint,
 │                       trajectory close, residual resolve
-├── query.rs            log/show/status, why/claims/evidence/residuals/attempts/
-│                       trajectory/context bundles, derived statuses, pagination
+├── semantic/          Phase 5: deterministic Rust extractor, entity/index objects,
+│                      lineage, semantic diff/resolution
+├── sync/              Phase 6: gemlpack transfer format, transport trait,
+│                      negotiation, fetch/push/pull, remotes config
+├── query.rs           log/show/status, why/claims/evidence/residuals/attempts/
+│                      trajectory/context bundles, derived statuses, pagination
 ├── exchange/           Phase 1.5: pack/frontier encoding, deterministic export,
 │                       quarantine ingest, source-state binding (EXCHANGE.md)
 ├── git_adapter.rs      isolated `git` index/staged-tree adapter (argv-safe)
@@ -198,7 +224,7 @@ src/                    the single `gemel` crate
     └── golden-gen.rs   golden vector generator
 golden/                 pinned golden vectors (canonical bytes + identities)
 docs/                   the normative specification set
-tests/                  Phase 1 + 2 + 3 + 1.5 + 4 + 5 integration suites (the acceptance demos)
+tests/                  Phase 1 + 2 + 3 + 1.5 + 4 + 5 + 6 integration suites (the acceptance demos)
 ```
 
 Layering is disciplined within the crate: primitives → encoding → schema → fixtures →

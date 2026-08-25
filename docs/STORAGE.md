@@ -360,21 +360,29 @@ writer never publishes a ref pointing to an object that is not already durable.
 
 ---
 
-## 10. Transfer and Pack Format (Phase 6 design)
+## 10. Transfer and Pack Format (Phase 6, implemented)
 
-Sync is a Phase 6 feature; the design is fixed now so the object model does not
-constrain it later.
+Native synchronization (`gemel remote` / `fetch` / `push` / `pull`; DISTRIBUTED.md) is
+separate from Git interchange (brief §47). The Phase 6 design is implemented in
+`src/sync/`:
 
-- **Negotiation**: the client advertises its want-set (refs) and have-set (object ids
-  present locally); the server computes the delta by id comparison (content addressing
-  makes this exact and deduplicating by construction).
-- **Pack format `gemlpack`**: header (magic `GMLP`, version, count, total bytes) +
-  records: `[id (33 bytes)] [len] [envelope bytes]`; ordering deterministic (ascending
-  id). Verification on receive: hash each record; abort on mismatch.
-- **Partial fetch**: fetch by id ranges; resume from the last verified id (range
-  requests); integrity verified per record.
-- **Authentication/authorization**: Phase 6; THREAT_MODEL.md §10.
-- Gemel synchronization and Git interchange are separate problems (brief §47).
+- **Negotiation**: want/have sets are object-id sets compared by content identity
+  (deduplicating by construction). `reachable_ids(seeds)` walks canonical gid edges;
+  `missing_ids(ids)` filters by local presence. A re-push transfers nothing; a resumed
+  fetch re-negotiates from the new have-set.
+- **Pack format `gemlpack`** (`src/sync/gemlpack.rs`): magic `GMLP`, version, count,
+  total bytes, records `[id 33 bytes][len][envelope]`, ascending id order. Every
+  record is verified (`BLAKE3(envelope) == id`, family match) during decode; a single
+  failure rejects the whole pack.
+- **Refs**: only public refs travel; every published ref has its closure verified
+  present (no dangling refs). Fetch tracks under `refs/remotes/<name>/*`; pull is
+  fetch + fast-forward and refuses divergence.
+- **Integrity**: end-to-end per-record verification on both directions; same-id
+  different-bytes is a fatal conflict (THREAT_MODEL.md §11).
+- **Transports**: `FileTransport` is shipped; network transports implement the same
+  six-operation trait (TLS mandatory for non-local remotes; THREAT_MODEL.md §10).
+- **Resumability**: there is no byte-level resume state; the have-set grows as verified
+  objects are inserted, so re-negotiation transfers exactly the remainder.
 
 ---
 

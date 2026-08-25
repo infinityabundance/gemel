@@ -193,15 +193,20 @@ security-relevant structure.
 
 ---
 
-## 10. Remote Protocol Threats (Phase 6 design)
+## 10. Remote Protocol Threats (Phase 6, implemented)
 
 - Fetch verification: every received record is hashed before use; mismatch aborts the
-  transfer (SEC-07).
+  transfer (SEC-07). Native sync re-verifies `BLAKE3(envelope) == id` on both
+  directions; a single corrupt record fails the whole transfer and publishes no refs
+  (DISTRIBUTED.md §3–§4).
 - Negotiation: want/have sets are id sets; no executable payloads.
-- Authentication/authorization: mutual auth; repository policy limits reads and writes;
-  fetch grants are capability-scoped.
+- Authentication/authorization: transport-scoped. The shipped `FileTransport`
+  delegates to the filesystem; network transports MUST use mutual auth and
+  capability-scoped fetch grants, with TLS mandatory for non-local remotes.
 - Poisoning: remote-announced objects that fail hash verification are never inserted;
-  the remote is reported.
+  the remote is reported. Same-id different-bytes is a fatal conflict (§11).
+- Local-only refs never travel: public-ref filtering happens on the advertising side
+  (DISTRIBUTED.md §2).
 - No TLS downgrade: transport encryption is mandatory for non-local remotes.
 
 ---

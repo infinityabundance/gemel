@@ -1,6 +1,7 @@
 # Gemel — Specification (Master Document)
 
-Status: **Phase 5 — Semantic Depth — complete.** Next phase: Phase 6 (Distributed Operation).
+Status: **Phase 6 — Distributed Operation — complete.** Next phase: Phase 7 (agent
+protocol / hosted workflows per the roadmap; see below).
 Document version: 1.3.0 (schema version `encver=1`, all object families `schemever=1`).
 Audience: implementers, protocol engineers, agent authors, maintainers.
 
@@ -54,7 +55,9 @@ evolution.
 
 ### 1.1 Non-goals (Phases 0–1)
 
-- No distributed synchronization (Phase 6).
+- No distributed synchronization beyond the native sync of Phase 6 (hosted
+  workflows, network authentication servers, and the agent protocol interface are
+  Phase 7).
 - No Git wire-protocol compatibility (Phase 4/6; Git *interchange* is designed now).
 - No semantic indexing beyond the object model (Phase 5; the lexical extractor is
   deterministic declaration indexing, not program analysis).
@@ -457,12 +460,33 @@ diff, trait/test extraction, nested modules, non-Rust files, Cargo.toml features
 index independence, exchange export of the semantic graph, and semantic context
 surviving a depth-1 Git clone.
 
-### Phase 6 — Distributed Operation
+### Phase 6 — Distributed Operation (complete)
 
 **Entry:** Phase 5 complete. **Exit:** remotes, object negotiation, partial fetch,
 resumable transfer, integrity verification, multiple producers, authentication,
 authorization, repository policy, hosted workflows. Content addressing makes sync
 naturally deduplicated. Gemel sync is a separate problem from Git interchange.
+
+Delivered: `gemel remote add|remove|list`, `gemel fetch|push|pull` with native
+Gemel↔Gemel sync and Git-only remote projection fallback (GIT_INTEROP.md §6). The
+`src/sync/` module implements the transport-agnostic protocol: public-ref policy
+(local-only namespaces never travel), `gemlpack` (GMLP v1) verified transfer packs,
+content-identity negotiation (`reachable_ids`/`missing_ids`), end-to-end per-record
+integrity (corruption and same-id-different-bytes fail closed with local state
+untouched), `refs/remotes/<name>/*` tracking, and fetch + fast-forward pull that
+refuses divergence. Network transports implement the same six-operation trait
+(TLS mandatory for non-local remotes; THREAT_MODEL.md §10). Proven by
+`tests/phase6_tests.rs` (10 courts): identical identities across machines, negotiation
+dedup and idempotence, tracking refs, multi-producer and semantic-object transport,
+corrupt-remote fail-closed, conflicting-identity fatality, divergence preservation,
+Git-only projection round-trip, non-repository fail-closed, and fsck-clean sync.
+
+### Phase 7 — Agent Protocol / Hosted Workflows
+
+**Entry:** Phase 6 complete. **Exit:** the lightweight agent protocol interface
+(brief §15.4), hosted workflows, repository policy enforcement, and deeper FRF court
+integration. (Roadmap placeholder; exact scope is refined against the Phase 6
+postmortem.)
 
 ---
 

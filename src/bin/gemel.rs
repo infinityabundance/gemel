@@ -292,6 +292,34 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// Manage native sync remotes (Phase 6; STORAGE.md §10).
+    Remote {
+        #[command(subcommand)]
+        cmd: Option<RemoteCmd>,
+    },
+    /// Fetch a remote's objects and refs into refs/remotes/<name>/*.
+    Fetch {
+        /// Remote name (or a path).
+        remote: String,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Push the local public refs to a remote (native sync; a Git-only
+    /// remote receives the deterministic projection).
+    Push {
+        /// Remote name (or a path).
+        remote: String,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Fetch a remote and fast-forward the local refs (native sync; a
+    /// Git-only remote is imported). Never overwrites diverged local work.
+    Pull {
+        /// Remote name (or a path).
+        remote: String,
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -388,6 +416,25 @@ enum ChangeCmd {
         /// Working directory to snapshot (default: repository root).
         #[arg(long)]
         worktree: Option<PathBuf>,
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+enum RemoteCmd {
+    /// Add (or replace) a remote; `--init` initializes a new remote repo.
+    Add {
+        name: String,
+        path: String,
+        #[arg(long)]
+        init: bool,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Remove a remote.
+    Remove {
+        name: String,
         #[arg(long)]
         json: bool,
     },
@@ -2013,9 +2060,249 @@ fn run(cli: &Cli) -> Result<u8, Error> {
             }
             Ok(0)
         }
+        Command::Remote { cmd } => {
+            let repo = Repo::find(cli.repo.as_deref().unwrap_or(&std::env::current_dir()?))?;
+            match cmd {
+                None => {
+                    let cfg = gemel::sync::read_remotes(&repo)?;
+                    if cfg.remotes.is_empty() {
+                        println!("no remotes");
+                    } else {
+                        for (name, path) in &cfg.remotes {
+                            println!("{name}\t{path}");
+                        }
+                    }
+                    Ok(0)
+                }
+                Some(RemoteCmd::Add {
+                    name,
+                    path,
+                    init,
+                    json,
+                }) => {
+                    // Validate (and optionally initialize) the remote before
+                    // recording it: a broken remote is never configured.
+                    let _ = gemel::sync::FileTransport::open(Path::new(path), *init)?;
+                    gemel::sync::add_remote(&repo, name, path)?;
+                    if *json {
+                        print_json(
+                            "remote add",
+                            json!({ "name": name, "path": path, "initialized": init }),
+                        );
+                    } else {
+                        println!("{name} -> {path}");
+                        if *init {
+                            println!("  initialized remote repository");
+                        }
+                    }
+                    Ok(0)
+                }
+                Some(RemoteCmd::Remove { name, json }) => {
+                    gemel::sync::remove_remote(&repo, name)?;
+                    if *json {
+                        print_json("remote remove", json!({ "name": name }));
+                    } else {
+                        println!("removed remote {name}");
+                    }
+                    Ok(0)
+                }
+            }
+        }
+        Command::Fetch { remote, json } => {
+            let repo = Repo::find(cli.repo.as_deref().unwrap_or(&std::env::current_dir()?))?;
+            let (name, path) = resolve_remote(&repo, remote)?;
+            match open_sync_remote(&path)? {
+                RemoteKind::Native(transport) => {
+                    let out = gemel::sync::fetch(&repo, &name, &*transport)?;
+                    if *json {
+                        print_json(
+                            "fetch",
+                            json!({
+                                "remote": out.remote,
+                                "mode": "native",
+                                "remote_refs": out.remote_refs,
+                                "wanted": out.wanted,
+                                "transferred": out.transferred,
+                                "inserted": out.inserted,
+                                "refs_written": out.refs_written,
+                            }),
+                        );
+                    } else {
+                        println!("fetched {} object(s) from {}", out.transferred, out.remote);
+                        println!("  tracking refs under refs/remotes/{}", out.remote);
+                    }
+                    Ok(0)
+                }
+                RemoteKind::Git(git_dir) => {
+                    // Git-only remote: deterministic import projection.
+                    let out = gemel::git_interop::import_git(
+                        &repo,
+                        &gemel::git_interop::ImportGitOptions {
+                            git_dir,
+                            head: "HEAD".into(),
+                        },
+                    )?;
+                    if *json {
+                        print_json(
+                            "fetch",
+                            json!({
+                                "remote": name,
+                                "mode": "git",
+                                "commits": out.commits,
+                                "changes": out.changes,
+                            }),
+                        );
+                    } else {
+                        println!("fetched {} change(s) from Git remote {}", out.changes, name);
+                    }
+                    Ok(0)
+                }
+            }
+        }
+        Command::Push { remote, json } => {
+            let repo = Repo::find(cli.repo.as_deref().unwrap_or(&std::env::current_dir()?))?;
+            let (_name, path) = resolve_remote(&repo, remote)?;
+            match open_sync_remote(&path)? {
+                RemoteKind::Native(transport) => {
+                    let out = gemel::sync::push(&repo, &_name, &*transport)?;
+                    if *json {
+                        print_json(
+                            "push",
+                            json!({
+                                "remote": out.remote,
+                                "mode": "native",
+                                "refs_pushed": out.refs_pushed,
+                                "transferred": out.transferred,
+                            }),
+                        );
+                    } else {
+                        println!(
+                            "pushed {} ref(s), {} object(s) to {}",
+                            out.refs_pushed, out.transferred, out.remote
+                        );
+                    }
+                    Ok(0)
+                }
+                RemoteKind::Git(git_dir) => {
+                    // Git-only remote: deterministic export projection.
+                    let out = gemel::git_interop::export_git(
+                        &repo,
+                        &gemel::git_interop::ExportGitOptions {
+                            git_dir,
+                            branch: "main".into(),
+                            include_claims: false,
+                        },
+                    )?;
+                    if *json {
+                        print_json(
+                            "push",
+                            json!({
+                                "remote": _name,
+                                "mode": "git",
+                                "commits": out.commits,
+                            }),
+                        );
+                    } else {
+                        println!("pushed {} commit(s) to Git remote {}", out.commits, _name);
+                    }
+                    Ok(0)
+                }
+            }
+        }
+        Command::Pull { remote, json } => {
+            let repo = Repo::find(cli.repo.as_deref().unwrap_or(&std::env::current_dir()?))?;
+            let (name, path) = resolve_remote(&repo, remote)?;
+            match open_sync_remote(&path)? {
+                RemoteKind::Native(transport) => {
+                    let out = gemel::sync::pull(&repo, &name, &*transport)?;
+                    if *json {
+                        print_json(
+                            "pull",
+                            json!({
+                                "remote": name,
+                                "mode": "native",
+                                "transferred": out.fetch.transferred,
+                                "fast_forwarded": out.fast_forwarded,
+                                "applied_refs": out.applied_refs,
+                            }),
+                        );
+                    } else {
+                        println!("pulled {} object(s) from {}", out.fetch.transferred, name);
+                        if out.fast_forwarded {
+                            println!("  fast-forwarded {} ref(s)", out.applied_refs);
+                        }
+                    }
+                    Ok(0)
+                }
+                RemoteKind::Git(git_dir) => {
+                    let out = gemel::git_interop::import_git(
+                        &repo,
+                        &gemel::git_interop::ImportGitOptions {
+                            git_dir,
+                            head: "HEAD".into(),
+                        },
+                    )?;
+                    if *json {
+                        print_json(
+                            "pull",
+                            json!({
+                                "remote": name,
+                                "mode": "git",
+                                "commits": out.commits,
+                                "changes": out.changes,
+                            }),
+                        );
+                    } else {
+                        println!("pulled {} change(s) from Git remote {}", out.changes, name);
+                    }
+                    Ok(0)
+                }
+            }
+        }
     }
 }
 
+/// Resolves a remote argument: a configured remote name, or a direct path.
+fn resolve_remote(repo: &Repo, arg: &str) -> Result<(String, PathBuf), Error> {
+    if let Ok(path) = gemel::sync::remote_path(repo, arg) {
+        return Ok((arg.to_string(), path));
+    }
+    let path = PathBuf::from(arg);
+    Ok((arg.to_string(), path))
+}
+
+/// The sync target behind a path: a native Gemel repository or a Git-only
+/// repository (GIT_INTEROP.md §6: push/pull serve both).
+enum RemoteKind {
+    Native(Box<dyn gemel::sync::Transport>),
+    Git(PathBuf),
+}
+
+fn open_sync_remote(path: &Path) -> Result<RemoteKind, Error> {
+    if path
+        .join(gemel::store::META_DIR)
+        .join("meta.json")
+        .is_file()
+    {
+        return Ok(RemoteKind::Native(Box::new(
+            gemel::sync::FileTransport::open(path, false)?,
+        )));
+    }
+    let git_dir = if path.join(".git").is_dir() {
+        Some(path.join(".git"))
+    } else if path.join("HEAD").is_file() && path.join("objects").is_dir() {
+        Some(path.to_path_buf()) // bare repository
+    } else {
+        None
+    };
+    match git_dir {
+        Some(g) => Ok(RemoteKind::Git(g)),
+        None => Err(Error::Invalid(format!(
+            "{} is neither a gemel repository nor a git repository",
+            path.display()
+        ))),
+    }
+}
 /// Walks up from `start` looking for `.gemel/` (native store) or
 /// `.gemel/exchange/` (exchange material only; EXCHANGE.md §34).
 fn discover_exchange_root(start: &Path) -> Result<Option<PathBuf>, Error> {
