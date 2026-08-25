@@ -943,8 +943,19 @@ pub static CHECKPOINT_SPEC: [FieldSpec; 13] = [
     FieldSpec::new(0x0D, "created_at", Type::I64, false),
 ];
 
+/// One required-verification platform entry: {kind, platforms:[{platform, arch}]}.
+pub static TY_REC_REQ_VERIF_PLATFORM: Type = Type::Record(&REQ_VERIF_PLATFORM_SPEC);
+/// One required-verification matrix entry.
+pub static TY_REC_REQ_VERIF_ENTRY: Type = Type::Record(&REQ_VERIF_ENTRY_SPEC);
+
+/// platform/arch pair inside a required-verification entry.
+pub static REQ_VERIF_PLATFORM_SPEC: [FieldSpec; 2] = [
+    FieldSpec::new(0x01, "platform", Type::Str, true),
+    FieldSpec::new(0x02, "arch", Type::Str, true),
+];
+
 /// config (OBJECT_MODEL.md §6.21).
-pub static CONFIG_SPEC: [FieldSpec; 7] = [
+pub static CONFIG_SPEC: [FieldSpec; 8] = [
     FieldSpec::new(0x01, "previous", Type::Gid(Family::Config), false),
     FieldSpec::new(0x02, "retention", Type::Record(&RETENTION_SPEC), false),
     FieldSpec::new(0x03, "gc", Type::Record(&GC_SPEC), false),
@@ -957,6 +968,31 @@ pub static CONFIG_SPEC: [FieldSpec; 7] = [
     ),
     FieldSpec::new(0x06, "limits", Type::Record(&LIMITS_SPEC), false),
     FieldSpec::new(0x07, "created_at", Type::I64, false),
+    FieldSpec::new(
+        0x08,
+        "required_verification",
+        Type::Record(&REQ_VERIF_SPEC),
+        false,
+    ),
+];
+
+/// The required-verification matrix record: 0x01 entries array.
+pub static REQ_VERIF_SPEC: [FieldSpec; 1] = [FieldSpec::new(
+    0x01,
+    "entries",
+    Type::Array(&TY_REC_REQ_VERIF_ENTRY),
+    false,
+)];
+
+/// One matrix entry: {kind, platforms}.
+pub static REQ_VERIF_ENTRY_SPEC: [FieldSpec; 2] = [
+    FieldSpec::new(0x01, "kind", Type::Str, true),
+    FieldSpec::new(
+        0x02,
+        "platforms",
+        Type::Array(&TY_REC_REQ_VERIF_PLATFORM),
+        false,
+    ),
 ];
 
 /// mapping (OBJECT_MODEL.md §6.22).

@@ -1,7 +1,8 @@
 # Gemel — Specification (Master Document)
 
-Status: **Phase 6 — Distributed Operation — complete.** Next phase: Phase 7 (agent
-protocol / hosted workflows per the roadmap; see below).
+Status: **Phase 7 — Agent Protocol & Workflow Intelligence — complete.** Next phase:
+Phase 8 (hosted workflows, network transports, and deeper FRF integration per the
+roadmap).
 Document version: 1.3.0 (schema version `encver=1`, all object families `schemever=1`).
 Audience: implementers, protocol engineers, agent authors, maintainers.
 
@@ -481,12 +482,39 @@ dedup and idempotence, tracking refs, multi-producer and semantic-object transpo
 corrupt-remote fail-closed, conflicting-identity fatality, divergence preservation,
 Git-only projection round-trip, non-repository fail-closed, and fsck-clean sync.
 
-### Phase 7 — Agent Protocol / Hosted Workflows
+### Phase 7 — Agent Protocol / Hosted Workflows (complete)
 
 **Entry:** Phase 6 complete. **Exit:** the lightweight agent protocol interface
 (brief §15.4), hosted workflows, repository policy enforcement, and deeper FRF court
 integration. (Roadmap placeholder; exact scope is refined against the Phase 6
 postmortem.)
+
+Delivered (the substrate-first slice; hosted servers are Phase 8):
+
+- **`gemel protocol`** (`src/protocol.rs`): a bounded, line-delimited JSON session
+  over stdin/stdout — `status`, `next`, `why`, `semantic`, `claims`, `evidence`,
+  `residuals`, `attempts`, `context`, `log`, `index` — with stable error codes and
+  strict request parsing. It is session framing over the existing query layer, never
+  a parallel ontology.
+- **`gemel next`** (brief §57): recommendations derived purely from durable state —
+  pending change → `continue`; open residuals → `resolve`; blocked claims →
+  `verify`; required-but-missing verification → `verify` (possible); unindexed head
+  → `index`; failed attempts → `inspect`; stale exchange context → `reconcile`.
+  Never fake intelligence: every recommendation carries a derived rationale and an
+  explicit certainty.
+- **`gemel policy`**: the required-verification matrix (config `required_verification`,
+  OBJECT_MODEL.md §6.21) with evidence-based gap detection; missing required
+  verification makes readiness `NOT_READY` (OBJECT_MODEL.md §8.4).
+- Proven by `tests/phase7_tests.rs` (6 courts): protocol routing and error codes,
+  malformed/oversized request rejection, honest next recommendations, blocked-claim
+  verification, policy-driven readiness, and protocol/CLI consistency.
+
+### Phase 8 — Hosted Workflows & Network Transports
+
+**Entry:** Phase 7 complete. **Exit:** network transports (SSH/HTTP) implementing the
+Phase 6 transport trait with mutual auth and capability-scoped grants (THREAT_MODEL
+§10), hosted sync, repository policy enforcement servers, and deeper FRF court
+integration. (Roadmap placeholder.)
 
 ---
 

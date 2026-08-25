@@ -39,6 +39,7 @@ pub mod hex;
 pub mod ignore;
 pub mod json;
 pub mod limits;
+pub mod protocol;
 pub mod query;
 pub mod reconcile;
 pub mod semantic;

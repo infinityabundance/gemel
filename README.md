@@ -18,8 +18,10 @@ deterministically encoded object model implemented in native Rust.
 
 ## Status
 
-**Phase 6 — Distributed Operation — complete.** Next: Phase 7 (agent protocol /
-hosted workflows).
+**Phase 7 — Agent Protocol & Workflow Intelligence — complete.** Next: Phase 8
+(hosted workflows / network transports).
+
+**Phase 6 — Distributed Operation — complete.**
 
 **Phase 5 — Semantic Depth — complete.**
 
@@ -181,6 +183,20 @@ brief §22–§24, §13):
   negotiation dedup, multi-producer + semantic transport, corruption, conflict,
   divergence, Git projection, fsck-clean sync).
 
+**Phase 7 delivers the agent protocol & workflow intelligence** (brief §15.4, §57):
+
+- `gemel protocol` — a bounded line-delimited JSON session over stdin/stdout
+  (status/next/why/semantic/claims/evidence/residuals/attempts/context/log/index)
+  with stable error codes: agents query Gemel without scraping terminal prose. It is
+  session framing over the existing query layer — never a parallel ontology.
+- `gemel next` — recommendations derived purely from durable state: continue a
+  pending change, resolve open residuals, verify blocked claims, index the head
+  state, inspect failed attempts, reconcile stale context. Every recommendation
+  carries a derived rationale and an explicit certainty; nothing is invented.
+- `gemel policy` — the required-verification matrix (config §0x08) with evidence-
+  based gap detection; missing required verification makes readiness `NOT_READY`.
+- 6 courts in `tests/phase7_tests.rs`.
+
 ## Reading order
 
 1. `docs/SPECIFICATION.md` — purpose, principles, architecture, conformance matrices.
@@ -188,7 +204,7 @@ brief §22–§24, §13):
 3. `docs/STORAGE.md` — persistence, refs, indexes, retention, fsck.
 4. `docs/INVARIANTS.md` — the complete correctness contract.
 5. `docs/GIT_INTEROP.md` — deterministic Git interchange.
-6. `docs/AGENT_PROTOCOL.md` — the machine query surface.
+6. `docs/AGENT_PROTOCOL.md` — the machine query surface + agent session protocol.
 7. `docs/DISTRIBUTED.md` — native sync protocol (Phase 6).
 8. `docs/EXCHANGE.md` — Git-carried exchange rollups (Phase 1.5).
 9. `docs/THREAT_MODEL.md` — security model and fail-closed catalog.
@@ -208,6 +224,7 @@ src/                    the single `gemel` crate
 │                      lineage, semantic diff/resolution
 ├── sync/              Phase 6: gemlpack transfer format, transport trait,
 │                      negotiation, fetch/push/pull, remotes config
+├── protocol.rs        Phase 7: bounded agent session protocol (stdin/stdout JSON)
 ├── query.rs           log/show/status, why/claims/evidence/residuals/attempts/
 │                      trajectory/context bundles, derived statuses, pagination
 ├── exchange/           Phase 1.5: pack/frontier encoding, deterministic export,
@@ -224,7 +241,7 @@ src/                    the single `gemel` crate
     └── golden-gen.rs   golden vector generator
 golden/                 pinned golden vectors (canonical bytes + identities)
 docs/                   the normative specification set
-tests/                  Phase 1 + 2 + 3 + 1.5 + 4 + 5 + 6 integration suites (the acceptance demos)
+tests/                  Phase 1 + 2 + 3 + 1.5 + 4 + 5 + 6 + 7 integration suites (the acceptance demos)
 ```
 
 Layering is disciplined within the crate: primitives → encoding → schema → fixtures →

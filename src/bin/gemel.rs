@@ -320,6 +320,23 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// Run the lightweight agent protocol session over stdin/stdout
+    /// (Phase 7; brief §15.4).
+    Protocol {
+        #[arg(long)]
+        json: bool,
+    },
+    /// Derive the next-step plan from durable repository state (Phase 7;
+    /// brief §57 — never fake intelligence).
+    Next {
+        #[arg(long)]
+        json: bool,
+    },
+    /// Show the active policy (required-verification matrix and gaps).
+    Policy {
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -2258,6 +2275,72 @@ fn run(cli: &Cli) -> Result<u8, Error> {
                     Ok(0)
                 }
             }
+        }
+        Command::Protocol { .. } => {
+            let repo = Repo::find(cli.repo.as_deref().unwrap_or(&std::env::current_dir()?))?;
+            gemel::protocol::run_session(&repo)?;
+            Ok(0)
+        }
+        Command::Next { json } => {
+            let repo = Repo::find(cli.repo.as_deref().unwrap_or(&std::env::current_dir()?))?;
+            let plan = gemel::query::next_plan(&repo)?;
+            if *json {
+                print_json(
+                    "next",
+                    json!({
+                        "intent": plan.intent.map(|g| g.to_string()),
+                        "trajectory": plan.trajectory.as_ref().map(|(n, g)| json!({ "name": n, "id": g.to_string() })),
+                        "state": plan.state.map(|g| g.to_string()),
+                        "recommendations": plan.recommendations.iter().map(|r| json!({
+                            "kind": r.kind,
+                            "subject": r.subject,
+                            "refs": r.refs.iter().map(|g| g.to_string()).collect::<Vec<_>>(),
+                            "rationale": r.rationale,
+                            "certainty": r.certainty,
+                        })).collect::<Vec<_>>(),
+                        "uncertainty": plan.uncertainty,
+                    }),
+                );
+            } else {
+                for r in &plan.recommendations {
+                    let subject = r.subject.clone().unwrap_or_default();
+                    println!("{} {}  ({})", r.kind, subject, r.certainty);
+                    println!("    {}", r.rationale);
+                    for g in &r.refs {
+                        println!("    ref: {g}");
+                    }
+                }
+            }
+            Ok(0)
+        }
+        Command::Policy { json } => {
+            let repo = Repo::find(cli.repo.as_deref().unwrap_or(&std::env::current_dir()?))?;
+            let matrix = gemel::query::required_verification(&repo)?;
+            let gaps = gemel::query::required_verification_gaps(&repo)?;
+            if *json {
+                print_json(
+                    "policy",
+                    json!({
+                        "required_verification": matrix.iter().map(|(k, p, a)| json!({ "kind": k, "platform": p, "arch": a })).collect::<Vec<_>>(),
+                        "gaps": gaps.iter().map(|(k, r)| json!({ "kind": k, "rationale": r })).collect::<Vec<_>>(),
+                    }),
+                );
+            } else {
+                if matrix.is_empty() {
+                    println!("no required-verification matrix configured");
+                } else {
+                    for (k, p, a) in &matrix {
+                        println!("required: {k} on {p}/{a}");
+                    }
+                }
+                for (_, r) in &gaps {
+                    println!("gap: {r}");
+                }
+                if gaps.is_empty() && !matrix.is_empty() {
+                    println!("all required verification present");
+                }
+            }
+            Ok(0)
         }
     }
 }

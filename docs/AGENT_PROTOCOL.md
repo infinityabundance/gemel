@@ -419,6 +419,43 @@ entities (bounded).
 }
 ```
 
+### 5.17 `next`
+
+Derives the next-step plan purely from durable engineering state (brief §57;
+nothing is invented): pending change → `continue`; open residuals → `resolve`;
+contradicted/partially-supported claims → `verify`; required-but-missing
+verification (config matrix, §8) → `verify`; unindexed head state → `index`;
+relevant failed attempts → `inspect`; stale exchange context → `reconcile`.
+Every recommendation carries its derived rationale and a certainty
+(`observed` for graph facts, `possible` for policy derivations).
+
+```json
+{
+  "schema": "gemel.query.v1",
+  "request": {"command": "next"},
+  "result": {
+    "intent": "intent.…",
+    "trajectory": {"name": "T1", "id": "trajectory.…"},
+    "state": "state.…",
+    "recommendations": [
+      {"kind": "resolve", "subject": "FreeBSD divergence",
+       "refs": ["residual.…"],
+       "rationale": "open residual: FreeBSD divergence",
+       "certainty": "observed"}
+    ]
+  },
+  "omitted": [],
+  "uncertainty": []
+}
+```
+
+### 5.18 `policy`
+
+Shows the active required-verification matrix (config `required_verification`,
+OBJECT_MODEL.md §6.21) and the gaps: required combinations with no supporting
+evidence on the head change. Missing required verification makes readiness
+`NOT_READY` (OBJECT_MODEL.md §8.4).
+
 ---
 
 ## 6. Progressive Disclosure and Context Bundles
@@ -550,7 +587,33 @@ Every verdict includes `reasons[]`; no verdict is produced without them.
 
 ---
 
-## 11. Error Semantics
+## 11. Agent Protocol Session (Phase 7; brief §15.4)
+
+`gemel protocol` is a bounded, line-delimited JSON session over stdin/stdout. It is a
+**session framing around the query layer** — no parallel ontology: every request
+routes to the same library queries as the CLI.
+
+Request (one JSON object per line):
+
+```json
+{"id": 1, "query": "why", "params": {"subject": "decode_name"}}
+```
+
+Response (one JSON object per line):
+
+```json
+{"id": 1, "schema": "gemel.agent.v1", "result": {…}, "omitted": [], "uncertainty": []}
+```
+
+Errors carry stable codes (`invalid_request`, `query_failed`, `limit_exceeded`,
+`internal`) — agents never parse prose. Queries: `status`, `next`, `why`, `semantic`,
+`claims`, `evidence`, `residuals`, `attempts`, `context`, `log`, `index`. Bounds: 64
+KiB request lines, 4 MiB responses; the session is stateless per request; EOF ends it;
+nothing is executed during a session.
+
+---
+
+## 12. Error Semantics
 
 ```json
 {
@@ -569,7 +632,7 @@ Codes: `NOT_FOUND`, `INVALID_ARGUMENT`, `BUDGET_EXCEEDED`, `PAGINATION_INVALID`,
 
 ---
 
-## 12. Determinism and Stability
+## 13. Determinism and Stability
 
 - Response bytes are a pure function of (repository content, query, parameters).
 - Schema evolution of the query surface follows additive rules: new endpoints and new

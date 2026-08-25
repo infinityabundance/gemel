@@ -456,6 +456,11 @@ pub fn status(repo: &Repo) -> Result<Status, Error> {
     } else {
         Readiness::Ready
     };
+    // Required-verification gaps (Phase 7 policy; OBJECT_MODEL.md §8.4):
+    // missing required verification is NOT_READY, never silently ignored.
+    if st.readiness == Readiness::Ready && !required_verification_gaps(repo)?.is_empty() {
+        st.readiness = Readiness::NotReady;
+    }
     Ok(st)
 }
 
@@ -2125,4 +2130,412 @@ pub fn context_bundle(
     bundle.omitted.sort();
     bundle.omitted.dedup();
     Ok(bundle)
+}
+
+// ---------------------------------------------------------------------------
+// next plan (brief §57; AGENT_PROTOCOL.md §9.4)
+// ---------------------------------------------------------------------------
+
+/// One derived recommendation. `kind` ∈ continue | inspect | verify | resolve
+/// | index | reconcile. Recommendations are derived from durable engineering
+/// state — never model opinion, never fabricated work.
+#[derive(Debug, Clone)]
+pub struct NextRecommendation {
+    pub kind: String,
+    pub subject: Option<String>,
+    pub refs: Vec<Gid>,
+    pub rationale: String,
+    /// `observed` (directly read from the graph), `possible` (policy-derived),
+    /// or `unknown`.
+    pub certainty: String,
+}
+
+/// The machine-generated next-step plan (brief §57).
+#[derive(Debug, Clone, Default)]
+pub struct NextPlan {
+    pub intent: Option<Gid>,
+    pub trajectory: Option<(String, Gid)>,
+    pub state: Option<Gid>,
+    pub recommendations: Vec<NextRecommendation>,
+    pub uncertainty: Vec<String>,
+}
+
+/// Derives the next-step plan purely from durable repository state: the
+/// pending change, open residuals, blocked claims, required-but-missing
+/// verification, unindexed semantic state, relevant failed attempts, and the
+/// exchange source binding. No model confidence, no prose reconstruction.
+pub fn next_plan(repo: &Repo) -> Result<NextPlan, Error> {
+    let mut plan = NextPlan {
+        state: repo.read_ref(REF_STATE_HEAD)?,
+        trajectory: repo
+            .read_ref(&format!("{REF_TRAJECTORIES}/current"))?
+            .map(|tg| {
+                let name = crate::workflow::name_in_namespace(repo, REF_TRAJECTORIES, &tg)
+                    .unwrap_or(None)
+                    .unwrap_or_else(|| tg.to_string());
+                (name, tg)
+            }),
+        ..Default::default()
+    };
+    if let Some(head) = repo.read_ref(REF_HEAD)? {
+        if let Ok(hobj) = repo.load(&head) {
+            plan.intent = hobj.field_sequence().and_then(|fs| gid_field(fs, 0x02));
+        }
+    }
+    let head = repo.read_ref(REF_HEAD)?;
+    let pending = crate::workflow::read_pending(repo)?;
+
+    // 1. A pending change in the workspace: continue it.
+    if let Some(p) = &pending {
+        let summary = p
+            .get("summary")
+            .and_then(|s| s.as_str())
+            .unwrap_or("pending change")
+            .to_string();
+        plan.recommendations.push(NextRecommendation {
+            kind: "continue".into(),
+            subject: Some("workspace".into()),
+            refs: Vec::new(),
+            rationale: format!("a change is pending in the workspace: {summary}"),
+            certainty: "observed".into(),
+        });
+    }
+
+    // 2. Open residuals: resolve them (explicit disposition events).
+    if let Some(h) = head {
+        let hobj = repo.load(&h)?;
+        let hfs = hobj.field_sequence().unwrap_or(&[]);
+        let mut open: Vec<Gid> = Vec::new();
+        for res in gid_list(hfs, 0x0E) {
+            let latest = chain_latest(repo, &res)?;
+            if residual_disposition(repo, &latest)? == "open" {
+                open.push(latest);
+            }
+        }
+        open.sort_by_key(|a| a.to_string());
+        for res in open.into_iter().take(8) {
+            let summary = repo
+                .load(&res)
+                .ok()
+                .and_then(|o| {
+                    o.field_sequence()
+                        .and_then(|fs| str_field(fs, 0x02).map(|s| s.to_string()))
+                })
+                .unwrap_or_default();
+            plan.recommendations.push(NextRecommendation {
+                kind: "resolve".into(),
+                subject: Some(summary.clone()), // summary doubles as scope hint
+                refs: vec![res],
+                rationale: format!("open residual: {summary}"),
+                certainty: "observed".into(),
+            });
+        }
+        // 3. Blocked claims: verify against the contradicting evidence.
+        for claim in gid_list(hfs, 0x0C) {
+            let (status, supporting, contradicting) = claim_status(repo, &claim)?;
+            if matches!(
+                status,
+                ClaimStatus::Contradicted | ClaimStatus::PartiallySupported
+            ) {
+                let predicate = repo
+                    .load(&claim)
+                    .ok()
+                    .and_then(|o| {
+                        o.field_sequence()
+                            .and_then(|fs| str_field(fs, 0x03).map(|s| s.to_string()))
+                    })
+                    .unwrap_or_default();
+                let mut refs = contradicting;
+                refs.extend(supporting);
+                plan.recommendations.push(NextRecommendation {
+                    kind: "verify".into(),
+                    subject: Some(format!("claim {claim}")),
+                    refs,
+                    rationale: format!("claim is {status:?}: {predicate}"),
+                    certainty: "observed".into(),
+                });
+            }
+        }
+        // 4. Required verification gaps (policy; config §8).
+        for gap in required_verification_gaps(repo)? {
+            plan.recommendations.push(NextRecommendation {
+                kind: "verify".into(),
+                subject: Some(gap.0.clone()),
+                refs: Vec::new(),
+                rationale: gap.1,
+                certainty: "possible".into(),
+            });
+        }
+        // 5. Semantic readiness: head state not indexed.
+        if let Some(state) = plan.state {
+            if crate::semantic::index_for_state(repo, &state)?.is_none() {
+                plan.recommendations.push(NextRecommendation {
+                    kind: "index".into(),
+                    subject: Some(state.to_string()),
+                    refs: vec![state],
+                    rationale: "head state is not semantically indexed (gemel index)".into(),
+                    certainty: "observed".into(),
+                });
+            }
+        }
+    }
+
+    // 6. Relevant failed attempts: other trajectories sharing the intent
+    // with a rejected/abandoned/inconclusive outcome.
+    if let Some(intent) = plan.intent {
+        let current_traj = plan.trajectory.as_ref().map(|(_, g)| *g);
+        let mut failed = Vec::new();
+        for (name, latest) in all_trajectories(repo)? {
+            if Some(latest) == current_traj {
+                continue;
+            }
+            if trajectory_intent(repo, &latest)? != Some(intent) {
+                continue;
+            }
+            let obj = repo.load(&latest)?;
+            let fs = obj.field_sequence().unwrap_or(&[]);
+            let outcome = str_field(fs, 0x0A).unwrap_or("").to_string();
+            if matches!(
+                outcome.as_str(),
+                "rejected" | "abandoned" | "inconclusive" | "interrupted"
+            ) {
+                failed.push((name, latest, outcome));
+            }
+        }
+        failed.sort_by(|a, b| a.0.cmp(&b.0));
+        for (name, latest, outcome) in failed.into_iter().take(8) {
+            plan.recommendations.push(NextRecommendation {
+                kind: "inspect".into(),
+                subject: Some(name.clone()),
+                refs: vec![latest],
+                rationale: format!("previous attempt {name} ended {outcome}"),
+                certainty: "observed".into(),
+            });
+        }
+    }
+
+    // 7. Exchange context binding (Phase 1.5): a stale imported context
+    // must be reconciled before any current-context claim.
+    if !crate::exchange::discover_frontiers(repo.meta_dir())?.is_empty() {
+        let active = crate::exchange::export::read_active_frontier(repo.meta_dir())?;
+        let binding = crate::exchange::export::working_tree_files(repo)
+            .ok()
+            .and_then(|files| crate::exchange::export::content_state_identity(repo, &files).ok())
+            .and_then(|content_id| {
+                crate::exchange::discover_frontiers(repo.meta_dir())
+                    .ok()
+                    .map(|fs| fs.iter().any(|(f, _, _)| f.source_state == content_id))
+            })
+            .unwrap_or(false);
+        if active.is_some() && !binding {
+            plan.recommendations.push(NextRecommendation {
+                kind: "reconcile".into(),
+                subject: Some("source state".into()),
+                refs: Vec::new(),
+                rationale: "transported context does not describe the checked-out source".into(),
+                certainty: "observed".into(),
+            });
+        }
+    }
+
+    // 8. Fresh repository: the honest default.
+    if head.is_none() && pending.is_none() {
+        plan.recommendations.push(NextRecommendation {
+            kind: "continue".into(),
+            subject: Some("repository".into()),
+            refs: Vec::new(),
+            rationale: "no work in progress; begin a change (gemel change begin)".into(),
+            certainty: "observed".into(),
+        });
+    }
+    if plan.recommendations.is_empty() {
+        plan.recommendations.push(NextRecommendation {
+            kind: "inspect".into(),
+            subject: None,
+            refs: Vec::new(),
+            rationale: "no open residuals, blocked claims, or missing verification".into(),
+            certainty: "observed".into(),
+        });
+    }
+    // Deterministic order: (kind, subject, gid).
+    plan.recommendations.sort_by(|a, b| {
+        a.kind
+            .cmp(&b.kind)
+            .then_with(|| a.subject.cmp(&b.subject))
+            .then_with(|| {
+                a.refs
+                    .first()
+                    .map(|g| g.to_string())
+                    .cmp(&b.refs.first().map(|g| g.to_string()))
+            })
+    });
+    Ok(plan)
+}
+
+/// The required-verification matrix of the active config (Phase 7 policy):
+/// `(kind, platform, arch)` for each required combination.
+pub fn required_verification(repo: &Repo) -> Result<Vec<(String, String, String)>, Error> {
+    let mut out = Vec::new();
+    let Some(cfg) = repo.read_ref(crate::store::REF_CONFIG)? else {
+        return Ok(out);
+    };
+    let obj = match repo.load(&cfg) {
+        Ok(o) => o,
+        Err(_) => return Ok(out),
+    };
+    let Some(fs) = obj.field_sequence() else {
+        return Ok(out);
+    };
+    let Some(matrix) = record_field(fs, 0x08) else {
+        return Ok(out);
+    };
+    let Some(entries) = matrix
+        .iter()
+        .find(|f| f.tag == 0x01)
+        .and_then(|f| match &f.value {
+            Value::Array(items) => Some(items),
+            _ => None,
+        })
+    else {
+        return Ok(out);
+    };
+    for entry in entries {
+        let Value::Record(record) = entry else {
+            continue;
+        };
+        let Some(kind) = str_field(record, 0x01) else {
+            continue;
+        };
+        let Some(platforms) = record
+            .iter()
+            .find(|f| f.tag == 0x02)
+            .and_then(|f| match &f.value {
+                Value::Array(items) => Some(items),
+                _ => None,
+            })
+        else {
+            continue;
+        };
+        for p in platforms {
+            let Value::Record(pf) = p else { continue };
+            if let (Some(platform), Some(arch)) = (str_field(pf, 0x01), str_field(pf, 0x02)) {
+                out.push((kind.to_string(), platform.to_string(), arch.to_string()));
+            }
+        }
+    }
+    out.sort();
+    Ok(out)
+}
+
+/// The required-verification gaps of the active config (Phase 7 policy):
+/// `(kind, rationale)` for each combination that is required but has no
+/// supporting evidence on the head change.
+pub fn required_verification_gaps(repo: &Repo) -> Result<Vec<(String, String)>, Error> {
+    let mut out = Vec::new();
+    let Some(cfg) = repo.read_ref(crate::store::REF_CONFIG)? else {
+        return Ok(out);
+    };
+    let obj = match repo.load(&cfg) {
+        Ok(o) => o,
+        Err(_) => return Ok(out),
+    };
+    let Some(fs) = obj.field_sequence() else {
+        return Ok(out);
+    };
+    let Some(matrix) = record_field(fs, 0x08) else {
+        return Ok(out);
+    };
+    // matrix: ARRAY<{kind, platforms}> under tag 0x01 of the record.
+    let Some(entries) = (|| {
+        for f in matrix {
+            if f.tag == 0x01 {
+                if let Value::Array(items) = &f.value {
+                    return Some(items);
+                }
+            }
+        }
+        None
+    })() else {
+        return Ok(out);
+    };
+    // The head change's claims and their evidence platforms.
+    let Some(head) = repo.read_ref(REF_HEAD)? else {
+        return Ok(out);
+    };
+    let hobj = repo.load(&head)?;
+    let hfs = hobj.field_sequence().unwrap_or(&[]);
+    let mut covered: Vec<(String, String, String)> = Vec::new(); // kind, platform, arch
+    for claim in gid_list(hfs, 0x0C) {
+        let cobj = match repo.load(&claim) {
+            Ok(o) => o,
+            Err(_) => continue,
+        };
+        let cfs = cobj.field_sequence().unwrap_or(&[]);
+        let kind = str_field(cfs, 0x04).unwrap_or("").to_string();
+        for ev in gid_list(cfs, 0x08) {
+            if let Some((platform, arch)) = evidence_platform(repo, &ev)? {
+                covered.push((kind.clone(), platform, arch));
+            }
+        }
+    }
+    for entry in entries {
+        let record = match entry {
+            Value::Record(fields) => fields,
+            _ => continue,
+        };
+        let kind = str_field(record, 0x01).unwrap_or("").to_string();
+        let Some(platforms) = (|| {
+            for f in record {
+                if f.tag == 0x02 {
+                    if let Value::Array(items) = &f.value {
+                        return Some(items);
+                    }
+                }
+            }
+            None
+        })() else {
+            continue;
+        };
+        for p in platforms {
+            let Value::Record(pf) = p else { continue };
+            let platform = str_field(pf, 0x01).unwrap_or("").to_string();
+            let arch = str_field(pf, 0x02).unwrap_or("").to_string();
+            let satisfied = covered
+                .iter()
+                .any(|(k, pl, ar)| k == &kind && pl == &platform && ar == &arch);
+            if !satisfied {
+                out.push((
+                    kind.clone(),
+                    format!("required verification missing: {kind} on {platform}/{arch}"),
+                ));
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// The (os family, arch) of an evidence object's environment, when known.
+fn evidence_platform(repo: &Repo, evidence: &Gid) -> Result<Option<(String, String)>, Error> {
+    let eobj = match repo.load(evidence) {
+        Ok(o) => o,
+        Err(_) => return Ok(None),
+    };
+    let efs = eobj.field_sequence().unwrap_or(&[]);
+    let Some(env) = gid_field(efs, 0x08) else {
+        return Ok(None);
+    };
+    let env_obj = match repo.load(&env) {
+        Ok(o) => o,
+        Err(_) => return Ok(None),
+    };
+    let fs = env_obj.field_sequence().unwrap_or(&[]);
+    let family = record_field(fs, 0x01)
+        .and_then(|os| str_field(os, 0x01))
+        .unwrap_or("")
+        .to_string();
+    let arch = str_field(fs, 0x02).unwrap_or("").to_string();
+    if family.is_empty() && arch.is_empty() {
+        return Ok(None);
+    }
+    Ok(Some((family, arch)))
 }

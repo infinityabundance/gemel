@@ -871,6 +871,7 @@ machine-generatable from structured repository state.
 | 0x05 | disclosure_default | STRING enum | | Default disclosure for new provenance |
 | 0x06 | limits | RECORD{…} | | Parse/query limits (§5, THREAT_MODEL §5) |
 | 0x07 | created_at | SINT | | Unix ms (metadata) |
+| 0x08 | required_verification | RECORD{0x01 entries: ARRAY<RECORD{0x01 kind: STRING, 0x02 platforms: ARRAY<RECORD{0x01 platform: STRING, 0x02 arch: STRING}>}>} | | The required-verification matrix (Phase 7): which claim kind × platform/arch combinations must have supporting evidence before readiness may count claims as verified (OBJECT_MODEL §8.4). Missing required verification ⇒ readiness `NOT_READY` |
 
 Retention record: 0x01 tiers: ARRAY<RECORD{0x01 tier: UINT, 0x02 policy: STRING enum
 (`retain_forever` `retain_policy` `prune_after_days` `size_limit_bytes`
