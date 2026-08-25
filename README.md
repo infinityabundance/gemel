@@ -117,7 +117,7 @@ through ordinary Git infrastructure without reducing Gemel to Git's ontology:
   `--working-tree`/`--git-index` verification for CI), auto-export on `change finish`
   inside Git worktrees, and `gemel fsck` reporting `native_store` + `exchange_transport`
   sections with `exchange-omitted` warnings distinct from corruption.
-- 33 integration courts with **real Git repositories**: transport, shallow clone,
+- 34 integration courts with **real Git repositories**: transport, shallow clone,
   branch-merge unions, Git-only mutation, corruption classes, idempotence, byte
   determinism across paths, non-interference, git cleanliness, index independence,
   incremental export, golden fixtures — `tests/exchange_tests.rs`.

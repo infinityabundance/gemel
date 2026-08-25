@@ -393,7 +393,7 @@ ordinary Git repository carries deterministic exchange artifacts (`.gemel/exchan
 such that `git clone && gemel status --json` restores the exported engineering frontier
 — Intents, Trajectories, Changes, Claims, Residuals, evidence summaries — with
 cryptographically verified identities, explicit uncertainty, and exact source-state
-binding. See `docs/EXCHANGE.md` (normative) and `tests/exchange_tests.rs` (33 courts
+binding. See `docs/EXCHANGE.md` (normative) and `tests/exchange_tests.rs` (34 courts
 using real Git repositories: transport, shallow clone, branch-merge unions, Git-only
 mutation, corruption, idempotence, byte determinism, non-interference, git cleanliness,
 index independence, incremental export, golden fixtures).
