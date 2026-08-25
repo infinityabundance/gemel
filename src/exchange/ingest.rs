@@ -12,7 +12,7 @@ use crate::store::refs::{RefOp, RefTransaction};
 use crate::store::{
     Error, InitOptions, Repo, REF_CONFIG, REF_HEAD, REF_NAMES, REF_STATE_HEAD, REF_TRAJECTORIES,
 };
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::Path;
 
 /// The ref namespace for imported frontiers.
@@ -57,6 +57,9 @@ struct IngestAccum {
     promoted_config: Option<Gid>,
     processed_packs: HashMap<String, bool>,
     imported_indexes: Vec<(Gid, Gid)>,
+    imported_changes: Vec<Gid>,
+    imported_states: Vec<Gid>,
+    imported_trajectories: Vec<Gid>,
 }
 
 /// Quarantine-validates and promotes every pack referenced by a frontier and
@@ -161,18 +164,24 @@ fn ingest_frontier_objects(
         // insert_bytes validates, hashes, publishes, and fails on
         // id↔bytes conflicts with local native objects.
         repo.insert_bytes(envelope)?;
-        if id.family() == crate::family::Family::SemanticIndex {
-            // Remember (state, index) pairs so the activated frontier can
-            // re-establish the semantic refs over the imported objects
-            // (the index is derived knowledge carried by the frontier;
-            // EXCHANGE.md §11, §56).
-            if let Ok(obj) = repo.load(id) {
-                if let Some(fs) = obj.field_sequence() {
-                    if let Some(state) = crate::query::gid_field(fs, 0x01) {
-                        accum.imported_indexes.push((state, *id));
+        match id.family() {
+            crate::family::Family::SemanticIndex => {
+                // Remember (state, index) pairs so the activated frontier can
+                // re-establish the semantic refs over the imported objects
+                // (the index is derived knowledge carried by the frontier;
+                // EXCHANGE.md §11, §56).
+                if let Ok(obj) = repo.load(id) {
+                    if let Some(fs) = obj.field_sequence() {
+                        if let Some(state) = crate::query::gid_field(fs, 0x01) {
+                            accum.imported_indexes.push((state, *id));
+                        }
                     }
                 }
             }
+            crate::family::Family::Change => accum.imported_changes.push(*id),
+            crate::family::Family::State => accum.imported_states.push(*id),
+            crate::family::Family::Trajectory => accum.imported_trajectories.push(*id),
+            _ => {}
         }
         total += 1;
     }
@@ -210,6 +219,9 @@ pub fn ingest_with_limits(repo: &Repo, limits: &ExchangeLimits) -> Result<Ingest
         promoted_config: None,
         processed_packs: HashMap::new(),
         imported_indexes: Vec::new(),
+        imported_changes: Vec::new(),
+        imported_states: Vec::new(),
+        imported_trajectories: Vec::new(),
     };
     // Current source content state (carrier-backed recovery of current blobs
     // happens inside build_state).
@@ -246,6 +258,7 @@ pub fn ingest_with_limits(repo: &Repo, limits: &ExchangeLimits) -> Result<Ingest
         repo.with_write_lock(|| {
             repo.apply_refs_unlocked(&RefTransaction { ops })?;
             restore_imported_names(repo, frontier)?;
+            restore_imported_object_names(repo, &accum)?;
             Ok(())
         })?;
         mark_imported(&meta, id)?;
@@ -363,6 +376,64 @@ fn restore_imported_names(repo: &Repo, frontier: &Frontier) -> Result<(), Error>
     if let Some(t) = frontier.trajectory {
         let tname = crate::workflow::next_name(repo, "trajectory")?;
         ops.push(RefOp::set(&format!("{REF_TRAJECTORIES}/{tname}"), t));
+    }
+    repo.apply_refs_unlocked(&RefTransaction { ops })
+}
+
+/// Names every imported change/state/trajectory that has no local name yet
+/// (deterministic gid order). The frontier descriptor only references the
+/// head change/trajectory, so sibling trajectories and their changes would
+/// otherwise be orphaned — present in the store but undiscoverable by the
+/// trajectory/attempts queries (EXCHANGE.md §7, §31). Names are local labels
+/// that continue the repository's counters; object identities are canonical
+/// and unaffected.
+fn restore_imported_object_names(repo: &Repo, accum: &IngestAccum) -> Result<(), Error> {
+    let mut changes: Vec<Gid> = accum.imported_changes.clone();
+    let mut states: Vec<Gid> = accum.imported_states.clone();
+    let mut trajectories: Vec<Gid> = accum.imported_trajectories.clone();
+    changes.sort_by_key(|g| g.to_bytes());
+    changes.dedup();
+    states.sort_by_key(|g| g.to_bytes());
+    states.dedup();
+    trajectories.sort_by_key(|g| g.to_bytes());
+    trajectories.dedup();
+    // Only the latest version of each trajectory chain receives a name: a
+    // trajectory referenced as another imported trajectory's `previous` is an
+    // intermediate version, reachable through trajectory_versions.
+    let mut is_previous: HashSet<Gid> = HashSet::new();
+    for g in &trajectories {
+        if let Ok(obj) = repo.load(g) {
+            if let Some(fs) = obj.field_sequence() {
+                if let Some(prev) = crate::query::gid_field(fs, 0x01) {
+                    is_previous.insert(prev);
+                }
+            }
+        }
+    }
+    let mut ops = Vec::new();
+    for g in &changes {
+        if repo.name_of(g)?.is_none() {
+            let name = crate::workflow::next_name(repo, "change")?;
+            ops.push(RefOp::set(&format!("{REF_NAMES}/{name}"), *g));
+        }
+    }
+    for g in &states {
+        if repo.name_of(g)?.is_none() {
+            let name = crate::workflow::next_name(repo, "state")?;
+            ops.push(RefOp::set(&format!("{REF_NAMES}/{name}"), *g));
+        }
+    }
+    for g in &trajectories {
+        if is_previous.contains(g) {
+            continue;
+        }
+        if repo.name_of(g)?.is_none() {
+            let name = crate::workflow::next_name(repo, "trajectory")?;
+            ops.push(RefOp::set(&format!("{REF_TRAJECTORIES}/{name}"), *g));
+        }
+    }
+    if ops.is_empty() {
+        return Ok(());
     }
     repo.apply_refs_unlocked(&RefTransaction { ops })
 }

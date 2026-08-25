@@ -710,6 +710,19 @@ pub fn change_touches(repo: &Repo, change: &Gid, subject: &str) -> Result<bool, 
         if str_field(cfs, 0x01) == Some(subject) {
             return Ok(true);
         }
+        // Claim subjects are module-path-ish identifiers; match a `::`
+        // suffix in either direction so `decode_name` surfaces a claim about
+        // `crate::parser::decode_name` (Phase 5 semantic subjects; never a
+        // substring heuristic — only whole-segment suffixes).
+        if let Some(cs) = str_field(cfs, 0x01) {
+            if (subject.ends_with("::") && cs.starts_with(subject))
+                || (cs.ends_with("::") && subject.starts_with(cs))
+                || subject.ends_with(&format!("::{cs}"))
+                || cs.ends_with(&format!("::{subject}"))
+            {
+                return Ok(true);
+            }
+        }
         if let Some(sg) = subject_gid {
             if gid_list(cfs, 0x02).contains(&sg) {
                 return Ok(true);

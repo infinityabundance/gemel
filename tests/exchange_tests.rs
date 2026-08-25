@@ -295,6 +295,133 @@ fn git_carried_roundtrip_reconstructs_canonical_ids() {
 }
 
 // ---------------------------------------------------------------------------
+// Sibling trajectories and rejected attempts survive the clone
+// ---------------------------------------------------------------------------
+
+/// A repository with two trajectories sharing one intent: T1 closed as
+/// `rejected` (with a reason), then T2 as the current attempt. Exported and
+/// committed.
+fn make_two_attempt_repo(tag: &str) -> PathBuf {
+    let root = temp_root(tag);
+    git(&root, &["init", "-q", "-b", "main"]);
+    git_config(&root);
+    let (code, _, err) = gemel_cli(&root, &["init"]);
+    assert_eq!(code, 0, "init failed: {err}");
+    write_file(&root, "src.rs", "pub fn attempt_a() {}\n");
+    let (code, _, err) = gemel_cli(
+        &root,
+        &[
+            "change",
+            "begin",
+            "--intent-summary",
+            "Fix parser compatibility",
+        ],
+    );
+    assert_eq!(code, 0, "begin a failed: {err}");
+    let (code, _, err) = gemel_cli(
+        &root,
+        &[
+            "change",
+            "finish",
+            "--summary",
+            "attempt A: strict decoding",
+            "--claim",
+            "parser::decode_name|strict RFC behavior|compatibility",
+            "--evidence",
+            "parser::decode_name|fail|oracle_comparison",
+            "--residual",
+            "FreeBSD divergence|high|platform_divergence",
+        ],
+    );
+    assert_eq!(code, 0, "finish a failed: {err}");
+    let (code, _, err) = gemel_cli(
+        &root,
+        &[
+            "trajectory",
+            "T1",
+            "--close",
+            "rejected",
+            "--reason",
+            "FreeBSD oracle diverged in 17 cases",
+        ],
+    );
+    assert_eq!(code, 0, "close T1 failed: {err}");
+    // Second attempt on the same intent.
+    write_file(&root, "src.rs", "pub fn attempt_b() {}\n");
+    let (code, _, err) = gemel_cli(
+        &root,
+        &[
+            "change",
+            "begin",
+            "--intent-summary",
+            "Fix parser compatibility",
+        ],
+    );
+    assert_eq!(code, 0, "begin b failed: {err}");
+    let (code, _, err) = gemel_cli(
+        &root,
+        &[
+            "change",
+            "finish",
+            "--summary",
+            "attempt B: upstream parity",
+            "--claim",
+            "parser::decode_name|BIND 9.20 parity|compatibility",
+            "--evidence",
+            "parser::decode_name|pass|oracle_comparison",
+        ],
+    );
+    assert_eq!(code, 0, "finish b failed: {err}");
+    commit_all(&root, "two attempts");
+    root
+}
+
+/// The rejected attempt (negative knowledge, brief §7) must be queryable on
+/// a fresh clone: `attempts` surfaces the rejected trajectory with its
+/// termination reason, and `why` lists it among previous approaches.
+#[test]
+fn rejected_sibling_trajectory_survives_clone() {
+    let repo_a = make_two_attempt_repo("sib-a");
+    let remote = temp_root("sib-remote");
+    git(&remote, &["init", "-q", "--bare", "-b", "main"]);
+    git(
+        &repo_a,
+        &["remote", "add", "origin", remote.to_str().unwrap()],
+    );
+    git(&repo_a, &["push", "-q", "-u", "origin", "HEAD"]);
+
+    let clone = temp_root("sib-clone");
+    clone_repo(&remote, &clone, &[]);
+    let st = result_of(&clone, &["status", "--json"]);
+    assert_eq!(st["exchange"]["source_match"], true);
+
+    // The rejected trajectory and its reason survive the clone.
+    let attempts = result_of(&clone, &["attempts", "decode_name", "--json"]);
+    let list = attempts["attempts"].as_array().unwrap();
+    assert!(
+        list.iter().any(|a| a["outcome"] == "rejected"
+            && a["termination_reason"]
+                == serde_json::Value::String("FreeBSD oracle diverged in 17 cases".into())),
+        "rejected attempt must surface with its reason: {attempts}"
+    );
+    // The residual of the rejected attempt is still repository knowledge.
+    let residuals = result_of(&clone, &["residuals", "--json"]);
+    assert!(!residuals["residuals"].as_array().unwrap().is_empty());
+    // `why` lists the rejected approach.
+    let why = result_of(&clone, &["why", "decode_name", "--json"]);
+    assert!(why["introduced_by"].is_object());
+    let approaches = why["previous_approaches"].as_array().unwrap();
+    assert!(
+        approaches.iter().any(|a| a["outcome"] == "rejected"),
+        "why must list the rejected approach: {why}"
+    );
+    // The sibling trajectory names are locally consistent and queryable.
+    let log = result_of(&clone, &["log", "--json"]);
+    let changes = log["changes"].as_array().unwrap();
+    assert_eq!(changes.len(), 2);
+}
+
+// ---------------------------------------------------------------------------
 // §44 shallow clone court
 // ---------------------------------------------------------------------------
 
