@@ -22,8 +22,9 @@ deterministically encoded object model implemented in native Rust.
 
 ## Status
 
-**Phase 8 — Hosted Workflows & Network Transports — complete.** Next: Phase 9 (per
-`docs/SPECIFICATION.md` §10).
+**Phase 8 — Hosted Workflows & Network Transports — complete.**
+**Phase 8.1 — Roadmap & Contract Reconciliation — complete.** Next: Phase 9
+(Agent Utility Closure; entry/exit contract in `docs/SPECIFICATION.md` §10).
 
 **Phase 7 — Agent Protocol & Workflow Intelligence — complete.**
 

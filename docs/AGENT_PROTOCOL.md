@@ -3,10 +3,14 @@
 Status: **Normative.** Version 1.0.0. Query surface schema: `gemel.query.v1`.
 
 Implementation status: §5.1–§5.10 (status, why, claims, evidence, residuals, attempts,
-trajectory, checkpoint, context, reconcile) are implemented (Phases 2–3); §5.11–§5.13
-(impact, context-diff, release) land in Phases 5/6; §7 (evidence ingest) is available
-through the change workflow and gains the standalone `evidence ingest` endpoint with
-the FRF integration.
+trajectory, checkpoint, context, reconcile), §5.14–§5.18 (log, show, index, semantic,
+next, policy), §6 (progressive disclosure), §8 (context bundles), §9
+(handoff/checkpoint/readiness), §10 (execution boundary via the Phase 8 court runner),
+and §11–§13 (session, errors, determinism) are **implemented** (Phases 1–8).
+§5.11–§5.13 (multidimensional `diff`, `impact`, `context-diff`), §5.19 (`release`),
+and the standalone §7 `evidence ingest` endpoint are **specified here but not yet
+implemented** — do not treat them as available. They are the Phase 9 delivery contract
+(SPECIFICATION.md §10); this header flips to “implemented” when Phase 9 exits.
 
 This document defines the machine-readable query surface: response envelope, JSON
 object mapping, pagination, token budgets, every query endpoint with its schema,
@@ -314,6 +318,9 @@ Dry-run plan for reconciling trajectories (no state mutation):
 
 ### 5.11 `diff <A> <B> --semantic --claims --behavior --evidence --residuals --dependencies`
 
+*Delivery: Phase 9 (SPECIFICATION.md §10). Not yet implemented; textual and `--semantic`
+deltas exist today.*
+
 Multidimensional delta (brief §23):
 
 ```json
@@ -330,6 +337,8 @@ Multidimensional delta (brief §23):
 
 ### 5.12 `impact <change-id>`
 
+*Delivery: Phase 9 (SPECIFICATION.md §10). Not yet implemented.*
+
 Conservative impact (brief §33): objects potentially affected.
 
 ```json
@@ -345,6 +354,8 @@ Conservative impact (brief §33): objects potentially affected.
 ```
 
 ### 5.13 `context-diff <run-a> <run-b>`
+
+*Delivery: Phase 9 (SPECIFICATION.md §10). Not yet implemented.*
 
 Compares two agent runs via their context manifests (brief §19):
 
@@ -456,6 +467,34 @@ OBJECT_MODEL.md §6.21) and the gaps: required combinations with no supporting
 evidence on the head change. Missing required verification makes readiness
 `NOT_READY` (OBJECT_MODEL.md §8.4).
 
+### 5.19 `release <trajectory> [--case <id>] [--name <string>]`
+
+*Delivery: Phase 9 (SPECIFICATION.md §10). Not yet implemented.*
+
+A **proof-carrying release** (brief §11, §24): publishes a `release` object binding a
+user-facing name to a distributable state and carries the verification evidence that
+supports the readiness claim — a release is not a label, it is a claim with its proof
+in scope.
+
+```json
+{"result": {
+  "release": "release.…",
+  "name": "v0.4.2",
+  "state": "state.…",
+  "trajectories": ["trajectory.…"],
+  "cases": ["case.…"],
+  "readiness": "READY",
+  "readiness_evidence": ["evidence.…"],
+  "open_residuals": ["residual.…"],
+  "verification_scope": [{"platform": "linux", "arch": "x86_64", "outcome": "pass"}]
+}}
+```
+
+The readiness claim is derived from the same policy machinery as `status`/`next`; the
+response names the evidence objects that support it, so a consumer can decide whether
+the proof is sufficient without trusting the label. A release is immutable; a new
+release supersedes it without rewriting it.
+
 ---
 
 ## 6. Progressive Disclosure and Context Bundles
@@ -497,6 +536,10 @@ deterministic for identical inputs and may be cached by content hash.
 
 ## 7. Evidence Ingestion Protocol
 
+*Delivery: the standalone `gemel evidence ingest` endpoint is Phase 9
+(SPECIFICATION.md §10). Today, evidence is published through the change workflow
+(`change finish --evidence`), the Phase 8 court runner, and the semantic indexer.*
+
 `gemel evidence ingest` accepts a stable JSON document (schema `gemel.evidence.v1`):
 
 ```json
@@ -534,7 +577,9 @@ publishes. Execution of reproduction instructions requires explicit policy
 `context-manifest` objects are built from: source/documentation objects supplied,
 claims/residuals included, previous trajectories considered, external artifacts, tool
 outputs, policies in force, instruction + digest. Construction is deterministic from
-the input list (order normalized by id). Manifests enable `context-diff` (§5.13) and
+The input list is normalized by id, preserving order. Manifests enable `context-diff`
+(§5.13, Phase 9) and re-hydration: a later agent can request the exact objects a
+previous run saw.
 make `AgentRun.context_manifest` a content-addressed record of what an agent saw.
 
 ---

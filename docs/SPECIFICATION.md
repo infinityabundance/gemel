@@ -1,7 +1,7 @@
 # Gemel — Specification (Master Document)
 
-Status: **Phase 8 — Hosted Workflows & Network Transports — complete.** Next phase:
-Phase 9 (per the roadmap; see the Phase Plan §10).
+Status: **Phase 8.1 — Roadmap & Contract Reconciliation — complete.** Next phase:
+Phase 9 (Agent Utility Closure; §10 defines its entry/exit contract).
 Document version: 1.3.0 (schema version `encver=1`, all object families `schemever=1`).
 Audience: implementers, protocol engineers, agent authors, maintainers.
 
@@ -288,9 +288,11 @@ JSON (`schema: gemel.query.v1`), library API, and (later) a lightweight agent pr
 Machine output is deterministic, versioned, bounded, paginated, explicit about omitted
 data, and explicit about uncertainty.
 
-Phase 2 surface (designed now, implemented later): `status`, `why`, `claims`,
-`evidence`, `residuals`, `attempts`, `trajectory`, `checkpoint`, `context`,
-`reconcile --plan`, multidimensional `diff`, `impact`, `context-diff`.
+Implemented surface (Phases 1–8): `status`, `why`, `claims`, `evidence`, `residuals`,
+`attempts`, `trajectory`, `checkpoint`, `context`, `reconcile --plan`, `log`, `show`,
+`index`, `semantic`, `next`, `policy`. Specified in AGENT_PROTOCOL.md but **not yet
+implemented** — the Phase 9 delivery contract: multidimensional `diff`, `impact`,
+`context-diff`, `release`, and the standalone `evidence ingest` endpoint.
 
 ---
 
@@ -397,20 +399,6 @@ using real Git repositories: transport, shallow clone, branch-merge unions, Git-
 mutation, corruption, idempotence, byte determinism, non-interference, git cleanliness,
 index independence, incremental export, golden fixtures).
 
-### Phase 2 — Agent-Native Value
-
-**Entry:** Phase 1 complete. **Exit:** `why`, `claims`, `evidence`, `residuals`,
-`attempts`, `trajectory`, `checkpoint`, `context` with machine-readable JSON forms; the
-§12 acceptance demo works end-to-end with two agents and no shared conversation.
-
-### Phase 3 — Reconciliation
-
-**Entry:** Phase 2 complete. **Exit:** `gemel reconcile` using textual changes, path
-changes, explicit dependency relationships, Claims, Evidence, Residuals; produces a
-Reconciliation object (adopted / rejected / unresolved / verification required /
-resulting State); concurrent agents from the same base State demonstrated. No semantic
-claims beyond actual evidence; uncertainty is exposed, never invented.
-
 ### Phase 4 — Git Interchange (complete)
 
 **Entry:** Phase 1.5 complete. **Exit:** deterministic Git→Gemel and Gemel→Git with
@@ -434,7 +422,8 @@ and conservative rename detection.
 
 **Entry:** Phase 4 complete. **Exit:** language-aware semantic indexing (starting with
 Rust) providing identities for module/type/trait/impl/function/method/constant/static/
-test/feature/dependency; richer `why`, `diff --semantic`, `attempts`, `impact`.
+test/feature/dependency; richer `why`, `diff --semantic`, `attempts` (`impact` was
+deferred to Phase 9).
 Language intelligence is an enhancement, never a core storage dependency; arbitrary
 files work without it.
 
@@ -550,6 +539,65 @@ Delivered:
   sessions over the local binary, CLI push/pull over an HTTP URL, the court policy
   matrix (default deny, `--allow`, allowlist, timeout → inconclusive, nothing
   executes during status), and policy-gap readiness through `--json`.
+
+### Phase 8.1 — Roadmap & Contract Reconciliation (complete)
+
+**Entry:** Phase 8 complete. **Exit:** the roadmap and the normative contracts are
+consistent with the implementation — no document promises a delivered endpoint that
+does not exist, every specified-but-undelivered endpoint carries an explicit delivery
+phase, and the Phase Plan (§10) defines every future phase with entry/exit criteria.
+
+Delivered (documentation only; no code):
+
+- `SPECIFICATION.md`: the status line no longer names an undefined next phase; the
+  duplicate/stale Phase 2/3 stub sections were removed from §10; §8 now attributes the
+  unimplemented query surface (multidimensional `diff`, `impact`, `context-diff`,
+  `release`, standalone `evidence ingest`) to the Phase 9 delivery contract; §10 now
+  defines Phase 8.1 and Phase 9.
+- `AGENT_PROTOCOL.md`: the header implementation-status block was rewritten to
+  distinguish implemented endpoints (with their phases) from specified-but-undelivered
+  ones, so a contract is never mistaken for a shipped feature; §5.11–§5.13 and §7 carry
+  Phase 9 delivery markers; the missing `release` contract (promised by the header but
+  never specified) is now normative as §5.19.
+- `README.md`: the status line reflects the reconciled roadmap.
+
+### Phase 9 — Agent Utility Closure
+
+**Entry:** Phase 8.1 complete. **Exit:** the agent-facing surface specified in
+AGENT_PROTOCOL.md §5.11–§5.13, §5.19, and §7 is implemented, courted, and documented
+as delivered — the AGENT_PROTOCOL.md header flips those sections to “implemented”.
+Phase 9 closes loops on the existing substrate; it adds no new object families unless
+the postmortem proves a need (`release` 0x12, `agentrun` 0x0F, `context-manifest` 0x13,
+and `environment` 0x10 are already in the catalog).
+
+Deliverables:
+
+1. **Multidimensional `diff`** (§5.11): `gemel diff A B --semantic --claims --behavior
+   --evidence --residuals --dependencies` on top of the existing textual and semantic
+   deltas. `semantic_interactions` carry `certainty: possible` only — interaction is
+   flagged, never invented (brief §13, §23).
+2. **`impact <change-id>`** (§5.12): conservative impact — paths and semantic entities
+   touched, `may_require_refresh` rules (path overlap, entity lineage), affected
+   claims and residuals, `verification_required` scopes (brief §33).
+3. **`context-diff <run-a> <run-b>`** (§5.13): compare two agent runs through their
+   context manifests — seen-by-a-only / seen-by-b-only, upstream revisions,
+   instruction-digest equality (brief §19).
+4. **Proof-carrying `release`** (§5.19): a release workflow publishing `release`
+   objects whose readiness claim is backed by the verification evidence/receipts in
+   scope — a release carries its proof, and `status`, `next`, and handoffs consume it
+   (brief §11, §24).
+5. **Standalone `evidence ingest`** (§7): publish evidence objects independently of a
+   change (producer, command, result, reproduction record, subject refs) — the
+   write-side counterpart of the Phase 8 court runner. Ingestion never executes
+   (brief §38).
+6. **AgentRun/ContextManifest capture**: the change workflow records producer-run
+   identity (model family/id, harness, input state, intent, context manifest,
+   instruction digest) with disclosure policies FULL / DIGEST_ONLY / REDACTED /
+   EPHEMERAL (brief §18–§20).
+
+Exit verified by: one or more courts per deliverable in `tests/phase9_tests.rs`
+(including interaction-uncertainty and disclosure-policy courts), the
+AGENT_PROTOCOL.md header flipped to “implemented”, and this section marked complete.
 
 ---
 
